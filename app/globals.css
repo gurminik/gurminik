@@ -296,7 +296,10 @@ select {
   display: flex;
   width: 250px;
   flex-direction: column;
-  padding: 24px 18px 18px;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 24px 18px 0;
+  overflow: hidden;
   color: #c8c9ca;
   background: linear-gradient(165deg, #111213 0%, #1c1e20 100%);
   border-right: 1px solid #292b2d;
@@ -304,11 +307,31 @@ select {
 }
 
 .gurminik-brand {
+  flex: 0 0 auto;
   display: flex;
   min-height: 72px;
   align-items: flex-start;
   justify-content: space-between;
   padding: 8px 10px 0;
+}
+
+.gurminik-sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 0 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #525559 transparent;
+}
+
+.gurminik-sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.gurminik-sidebar-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #525559;
 }
 
 .gurminik-brand strong {
@@ -353,7 +376,7 @@ select {
 }
 
 .gurminik-cloud-box {
-  margin-top: auto;
+  margin-top: 18px;
   padding: 14px;
   border: 1px solid #303234;
   border-radius: 12px;
@@ -1412,6 +1435,191 @@ select {
   color: #a45f2b;
 }
 
+.gurminik-ranking-toolbar,
+.gurminik-favorites-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px;
+}
+
+.gurminik-ranking-toolbar h3,
+.gurminik-favorites-header h3 {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.gurminik-ranking-toolbar span,
+.gurminik-favorites-header > div > span {
+  color: #71717a;
+  font-size: 13px;
+}
+
+.gurminik-ranking-table {
+  overflow-x: auto;
+}
+
+.gurminik-ranking-table table {
+  min-width: max(760px, 100%);
+}
+
+.gurminik-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.gurminik-clickable-row {
+  cursor: pointer;
+}
+
+.gurminik-clickable-row:hover {
+  background: #fff7ed;
+}
+
+.gurminik-person-products {
+  overflow: hidden;
+  border: 1px solid #e4e4e7;
+  border-radius: 14px;
+}
+
+.gurminik-person-products .gurminik-metric-row {
+  padding: 12px 14px;
+}
+
+.gurminik-person-contact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e4e4e7;
+  border-radius: 14px;
+  background: #fafafa;
+}
+
+.gurminik-person-contact svg {
+  width: 20px;
+  color: #b66f35;
+}
+
+.gurminik-person-contact div {
+  display: grid;
+  gap: 2px;
+}
+
+.gurminik-person-contact span {
+  color: #71717a;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.gurminik-person-contact a,
+.gurminik-person-contact strong {
+  color: #18181b;
+  font-weight: 900;
+}
+
+.gurminik-favorite-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.gurminik-favorite-card {
+  overflow: hidden;
+  transition: border-color .2s ease, transform .2s ease;
+}
+
+.gurminik-favorite-card.is-selected {
+  border-color: #c47f43;
+  box-shadow: 0 0 0 2px rgb(196 127 67 / 14%);
+}
+
+.gurminik-favorite-select {
+  display: grid;
+  width: 100%;
+  gap: 5px;
+  padding: 18px;
+  text-align: left;
+}
+
+.gurminik-favorite-select strong {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.gurminik-favorite-select small,
+.gurminik-favorite-select > span:last-child {
+  color: #71717a;
+  font-size: 12px;
+}
+
+.gurminik-favorite-star {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  margin-bottom: 5px;
+  border-radius: 11px;
+  color: #d18b42;
+  background: #fff4df;
+}
+
+.gurminik-favorite-star svg {
+  width: 19px;
+}
+
+.gurminik-favorite-actions {
+  display: flex;
+  border-top: 1px solid #e4e4e7;
+}
+
+.gurminik-favorite-actions a,
+.gurminik-favorite-actions button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.gurminik-favorite-actions svg {
+  width: 14px;
+}
+
+.gurminik-quick-purchase {
+  padding: 22px;
+  border-color: #d7b18e;
+}
+
+.gurminik-quick-kg input {
+  border-color: #b66f35;
+  box-shadow: 0 0 0 3px rgb(182 111 53 / 10%);
+}
+
+.gurminik-tel-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #166534;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.gurminik-tel-button svg {
+  width: 16px;
+}
+
 .gurminik-primary-button,
 .gurminik-product-actions > button:first-child {
   background: #242526;
@@ -1493,6 +1701,10 @@ select {
   .gurminik-expense-layout {
     grid-template-columns: 1fr;
   }
+
+  .gurminik-favorite-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1023px) {
@@ -1508,6 +1720,16 @@ select {
 @media (max-width: 760px) {
   .gurminik-sidebar {
     width: min(86vw, 290px);
+  }
+
+  .gurminik-ranking-toolbar,
+  .gurminik-favorites-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .gurminik-favorite-grid {
+    grid-template-columns: 1fr;
   }
 
   .gurminik-topbar {

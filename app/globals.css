@@ -731,6 +731,52 @@ select {
   line-height: 1.5;
 }
 
+/* Keep the purchase and edit forms within the viewport, including the save button. */
+.gurminik-purchase-dialog {
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 10px;
+  padding: 18px 22px;
+}
+
+.gurminik-purchase-dialog [data-slot="dialog-header"] {
+  gap: 4px;
+}
+
+.gurminik-purchase-dialog form {
+  gap: 10px;
+}
+
+.gurminik-purchase-dialog form > label {
+  gap: 4px;
+  font-size: 13px;
+}
+
+.gurminik-purchase-dialog form > label input,
+.gurminik-purchase-dialog form > label select {
+  height: 42px;
+  min-height: 42px;
+}
+
+.gurminik-purchase-dialog .gurminik-payment-field legend {
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+
+.gurminik-purchase-dialog .gurminik-payment-options span {
+  min-height: 44px;
+  padding: 8px;
+}
+
+.gurminik-purchase-dialog .gurminik-form-hint {
+  padding: 8px 10px;
+}
+
+.gurminik-purchase-dialog form > button {
+  min-height: 44px;
+}
+
 .gurminik-payment-field {
   min-width: 0;
   margin: 0;
@@ -1928,6 +1974,12 @@ select {
   .gurminik-searchbox input {
     min-height: 46px;
     font-size: 16px;
+  }
+
+  .gurminik-purchase-dialog form > label input,
+  .gurminik-purchase-dialog form > label select {
+    height: 46px;
+    min-height: 46px;
   }
 
   .gurminik-vcard-dialog {

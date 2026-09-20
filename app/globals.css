@@ -731,6 +731,92 @@ select {
   line-height: 1.5;
 }
 
+.gurminik-payment-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.gurminik-payment-field legend {
+  margin-bottom: 9px;
+  color: #282828;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.gurminik-payment-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.gurminik-payment-options label {
+  position: relative;
+  display: block;
+  cursor: pointer;
+}
+
+.gurminik-payment-options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.gurminik-payment-options span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 10px;
+  border: 1px solid #d5d2cc;
+  border-radius: 12px;
+  background: #f4f2ef;
+  color: #57534e;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.gurminik-payment-options input:checked + span {
+  border-color: #247753;
+  background: #e5f4eb;
+  color: #17613f;
+}
+
+.gurminik-payment-options label:last-child input:checked + span {
+  border-color: #c36a3c;
+  background: #fff0e5;
+  color: #97451f;
+}
+
+.gurminik-payment-options input:focus-visible + span {
+  outline: 3px solid #a7612e;
+  outline-offset: 2px;
+}
+
+.gurminik-payment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.gurminik-payment-badge.is-paid {
+  background: #e4f3ea;
+  color: #17613f;
+}
+
+.gurminik-payment-badge.is-unpaid {
+  background: #fff0e5;
+  color: #97451f;
+}
+
 .gurminik-form-hint svg {
   width: 17px;
   height: 17px;

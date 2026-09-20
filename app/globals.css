@@ -1751,6 +1751,40 @@ select {
   gap: 14px;
 }
 
+.cold-layout { display: grid; gap: 18px; min-width: 0; }
+.cold-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; }
+.cold-header h3, .cold-form h3, .cold-report h3 { font-size: 21px; font-weight: 850; color: #171717; }
+.cold-header span, .cold-note { color: #666; font-size: 13px; }
+.cold-header select, .cold-search select, .cold-report-controls select, .cold-fields input, .cold-fields select { min-height: 44px; border: 1px solid #d4d4d4; background: #fff; border-radius: 9px; padding: 8px 11px; color: #1b1b1b; }
+.cold-tabs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 7px; padding: 6px; background: #191919; border-radius: 13px; }
+.cold-tabs button { border-radius: 9px; padding: 11px 8px; color: #ddd; font-weight: 750; min-height: 46px; }
+.cold-tabs button.is-active { color: #fff; background: #704422; }
+.cold-summary { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.cold-note { padding: 8px 4px; }
+.cold-locked { color: #8a531f; display: inline-flex; align-items: center; gap: 5px; font-weight: 750; font-size: 12px; text-align: left; }
+.cold-search { display: flex; gap: 10px; align-items: center; padding: 12px; }
+.cold-search input { flex: 1; min-width: 0; }
+.cold-search select { flex: 0 1 260px; }
+.cold-form, .cold-report { padding: 22px; }
+.cold-form h3 { margin-bottom: 16px; }
+.cold-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
+.cold-fields label { display: grid; gap: 6px; min-width: 0; font-size: 13px; font-weight: 750; }
+.cold-fields input, .cold-fields select { width: 100%; }
+.cold-fields .cold-wide { grid-column: 1/-1; }
+.cold-preview { margin-top: 13px; padding: 12px; border-radius: 9px; background: #f3eee8; font-weight: 750; }
+.cold-actions, .cold-pages, .cold-report-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cold-actions { margin-top: 12px; }
+.cold-table { width: 100%; overflow-x: auto; }
+.cold-table table { width: 100%; min-width: 700px; border-collapse: collapse; }
+.cold-table th, .cold-table td { text-align: left; padding: 11px 12px; border-bottom: 1px solid #e5e5e5; font-size: 13px; vertical-align: middle; }
+.cold-table th { background: #ededed; font-weight: 850; white-space: nowrap; }
+.cold-pages { justify-content: center; }
+.cold-report { display: grid; gap: 16px; margin-top: 22px; }
+.cold-report-controls select, .cold-report-controls input { max-width: 220px; }
+.cold-report-breakdown { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+.cold-report-breakdown article { min-width: 0; }
+.cold-report-breakdown h4 { font-weight: 850; margin-bottom: 9px; }
+
 .gurminik-favorite-card {
   overflow: hidden;
   transition: border-color .2s ease, transform .2s ease;
@@ -1962,8 +1996,25 @@ select {
   }
 
   .gurminik-favorite-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 8px;
   }
+
+  .gurminik-favorite-select { padding: 11px; gap: 4px; min-height: 156px; }
+  .gurminik-favorite-select strong { font-size: 15px; overflow-wrap: anywhere; }
+  .gurminik-favorite-select small, .gurminik-favorite-select > span:last-child { font-size: 11px; overflow-wrap: anywhere; }
+  .gurminik-favorite-star { width: 29px; height: 29px; margin-bottom: 2px; }
+  .gurminik-favorite-actions { padding: 7px 9px; gap: 5px; }
+  .gurminik-favorite-actions a, .gurminik-favorite-actions button { font-size: 11px; padding: 7px 4px; }
+  .cold-header { align-items: stretch; flex-direction: column; }
+  .cold-header select { width: 100%; }
+  .cold-tabs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .cold-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .cold-fields { grid-template-columns: 1fr; }
+  .cold-search { flex-direction: column; align-items: stretch; }
+  .cold-search select { flex: auto; width: 100%; }
+  .cold-report-breakdown { grid-template-columns: 1fr; }
+  .cold-report-controls input, .cold-report-controls select { max-width: none; width: 100%; }
 
   .gurminik-topbar {
     height: 82px;
@@ -1994,6 +2045,7 @@ select {
   .gurminik-backup-grid {
     grid-template-columns: 1fr;
   }
+  .gurminik-summary-grid.cold-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
 
   .gurminik-stat {
     min-width: 0;

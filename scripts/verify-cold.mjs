@@ -22,6 +22,7 @@ assert.equal(coldSummary({...state,sales:[{...sale,status:'cancelled'}]}).saleKg
 assert.equal(coldDuplicate(state.purchases,{...purchase,id:'p2',dateTime:'2026-09-01T09:04:00Z'}),true);
 assert.equal(coldDuplicate(state.sales,{...sale,id:'s2',dateTime:'2026-09-02T09:10:00Z'}),false);
 assert.equal(coldSummary({...state,purchases:[purchase,{...purchase,id:'p3',person:'Ahmet',kg:10000,price:14,dateTime:'2026-09-03T09:00:00Z'}],sales:[sale,{...sale,id:'s3',kg:1000,price:20,dateTime:'2026-09-04T09:00:00Z'}],expenses:[]}).costOfGoods,109666.66666666667);
+assert.equal(coldSummary({...state,purchases:[purchase,{...purchase,id:'case',product:'limon',kg:1000}]}).buyKg,11000);
 const report=createColdPdf(state,-Infinity,Infinity,'Test');
 assert.ok(report.startsWith('%PDF-1.4'));
 assert.ok(report.includes('SOGUK HAVA DEPOSU'));

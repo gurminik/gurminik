@@ -7,7 +7,7 @@ export const EMPTY_COLD:ColdState={purchases:[],sales:[],expenses:[],categories:
 export const COLD_DEFAULT_CATEGORIES=['Elektrik','Nakliye','Çalışan','Bakım / Onarım','Kira','Yakıt','Ambalaj','Yükleme / Boşaltma','Diğer'];
 const key=(v:string)=>v.trim().toLocaleLowerCase('tr-TR');
 const active=(s:{status:string})=>s.status!=='cancelled';
-export function coldProducts(state:ColdState){return [...new Set([...state.purchases.map(x=>x.product),...state.sales.map(x=>x.product)])].sort((a,b)=>a.localeCompare(b,'tr-TR'))}
+export function coldProducts(state:ColdState){const names=new Map<string,string>();for(const name of [...state.purchases.map(x=>x.product),...state.sales.map(x=>x.product)])if(!names.has(key(name)))names.set(key(name),name.trim());return [...names.values()].sort((a,b)=>a.localeCompare(b,'tr-TR'))}
 export function coldStockAt(state:ColdState,product:string,at=Infinity){const k=key(product);return state.purchases.filter(x=>active(x)&&key(x.product)===k&&new Date(x.dateTime).getTime()<=at).reduce((a,x)=>a+x.kg,0)-state.sales.filter(x=>active(x)&&key(x.product)===k&&new Date(x.dateTime).getTime()<=at).reduce((a,x)=>a+x.kg,0)}
 export function coldDuplicate<T extends ColdPurchase|ColdSale>(rows:T[],item:T){const when=new Date(item.dateTime).getTime();return rows.some(row=>active(row)&&row.id!==item.id&&key(row.product)===key(item.product)&&row.kg===item.kg&&row.price===item.price&&Math.abs(new Date(row.dateTime).getTime()-when)<=300000&&('person' in row&&'person' in item?key(row.person)===key(item.person)&&key(row.plate)===key(item.plate):'buyer' in row&&'buyer' in item&&key(row.buyer)===key(item.buyer)))}
 

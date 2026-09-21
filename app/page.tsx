@@ -103,6 +103,16 @@ import {
   inRememberedDateRange,
   useRememberedDateRange,
 } from "@/lib/date-range";
+import {
+  type BackupPayload,
+  type RestoreMode,
+  type RestoreReport,
+  backupSummary,
+  formatRestoreReport,
+  normalizeBackupPayload,
+  readBackupSettings,
+  restoreBackupSettings,
+} from "@/lib/backup";
 
 type Product = {
   id: string;
@@ -1151,41 +1161,10 @@ export default function Home() {
       else if (action === "deleteFavorite")
         result = await supabase.from("favorites").delete().eq("id", data.id);
       else if (action === "importBackup") {
-        const basePayload = { ...data, contacts: [] };
-        result = await supabase.rpc("import_gurminik_backup", {
-          payload: basePayload,
+        result = await supabase.rpc("restore_gurminik_backup_v2", {
+          payload: data,
+          restore_mode: "merge",
         });
-        if (!result.error && Array.isArray(data.sales)) {
-          const saleImport = await supabase.rpc(
-            "import_gurminik_sales_backup",
-            { payload: data },
-          );
-          if (saleImport.error) throw saleImport.error;
-        }
-        if (!result.error && Array.isArray(data.contactCategories)) {
-          const categoryImport = await supabase.rpc(
-            "import_gurminik_contact_categories_backup",
-            { payload: data },
-          );
-          if (categoryImport.error) throw categoryImport.error;
-        }
-        if (!result.error && Array.isArray(data.contacts)) {
-          const contactImport = await supabase.rpc(
-            "import_gurminik_contacts_backup",
-            { payload: data },
-          );
-          if (contactImport.error) throw contactImport.error;
-        }
-        if (
-          !result.error &&
-          (Array.isArray(data.accountPayments) || Array.isArray(data.favorites))
-        ) {
-          const moduleImport = await supabase.rpc(
-            "import_gurminik_accounts_favorites_backup",
-            { payload: data },
-          );
-          if (moduleImport.error) throw moduleImport.error;
-        }
       } else throw new Error("Geçersiz işlem.");
       if (result.error) throw result.error;
     },
@@ -1729,106 +1708,43 @@ export default function Home() {
       "Telefonda tarayıcının Paylaş veya Menü bölümünden ‘Ana Ekrana Ekle’ seçeneğine dokunun.",
     );
   }
-  async function importBackup(file: File) {
-    try {
-      const data = JSON.parse(await file.text());
-      const records = Array.isArray(data)
-        ? data
-        : data.records || data.purchases;
-      if (!Array.isArray(records)) throw new Error("Geçersiz yedek");
-      if (data.coldStorage && !permissionFor("cold_storage").can_create)
-        throw new Error(
-          "Soğuk Hava yedeğini aktarmak için bu modülde ekleme yetkisi gerekir.",
-        );
-      if (
-        !window.confirm(
-          `${records.length} alış kaydı ve yedekteki diğer bilgiler buluta eklenecek. Devam edilsin mi?`,
-        )
-      )
-        return;
-      await mutate(
-        "importBackup",
-        Array.isArray(data) ? { records: data } : data,
+  async function createBackup(): Promise<BackupPayload> {
+    if (!session) throw new Error("Bulut oturumu bulunamadı.");
+    if (!navigator.onLine)
+      throw new Error("Eksiksiz yedek almak için internet bağlantısı gerekir.");
+    const { data, error: backupError } = await supabase.rpc(
+      "export_gurminik_backup_v2",
+    );
+    if (backupError) throw backupError;
+    return normalizeBackupPayload({
+      ...(data as Record<string, unknown>),
+      settings: readBackupSettings(session.user.id),
+    });
+  }
+  async function importBackup(
+    payload: BackupPayload,
+    mode: RestoreMode,
+  ): Promise<RestoreReport> {
+    if (!session) throw new Error("Bulut oturumu bulunamadı.");
+    if (!navigator.onLine)
+      throw new Error("Yedek geri yükleme için internet bağlantısı gerekir.");
+    const summary = backupSummary(payload);
+    if (
+      (summary.coldPurchases || summary.coldSales || summary.coldExpenses) &&
+      !permissionFor("cold_storage").can_create
+    )
+      throw new Error(
+        "Soğuk Hava yedeğini aktarmak için bu modülde ekleme yetkisi gerekir.",
       );
-      if (data.coldStorage) {
-        const cs = data.coldStorage as ColdState;
-        const restore = async (
-          table:
-            | "cold_storage_purchases"
-            | "cold_storage_sales"
-            | "cold_storage_expenses"
-            | "cold_storage_expense_categories",
-          rows: Record<string, unknown>[],
-        ) => {
-          for (let i = 0; i < rows.length; i += 200) {
-            const { error: restoreError } = await supabase
-              .from(table)
-              .upsert(rows.slice(i, i + 200), {
-                onConflict: "id",
-                ignoreDuplicates: true,
-              });
-            if (restoreError) throw restoreError;
-          }
-        };
-        await restore(
-          "cold_storage_expense_categories",
-          (cs.categories || [])
-            .filter(
-              (x) =>
-                !cold.categories.some((y) => norm(y.name) === norm(x.name)),
-            )
-            .map((x) => ({ id: x.id, name: x.name })),
-        );
-        await restore(
-          "cold_storage_purchases",
-          (cs.purchases || []).map((x) => ({
-            id: x.id,
-            product_name: x.product,
-            supplier_name: x.person,
-            vehicle_plate: x.plate,
-            quantity_kg: x.kg,
-            unit_buy_price: x.price,
-            transaction_at: x.dateTime,
-            notes: x.note,
-            status: x.status,
-          })),
-        );
-        await restore(
-          "cold_storage_sales",
-          (cs.sales || []).map((x) => ({
-            id: x.id,
-            product_name: x.product,
-            buyer_name: x.buyer,
-            quantity_kg: x.kg,
-            unit_sale_price: x.price,
-            transaction_at: x.dateTime,
-            notes: x.note,
-            status: x.status,
-          })),
-        );
-        await restore(
-          "cold_storage_expenses",
-          (cs.expenses || []).map((x) => ({
-            id: x.id,
-            title: x.title,
-            category: x.category,
-            amount: x.amount || 0,
-            product_name: x.product || null,
-            loss_kg: x.lossKg || null,
-            transaction_at: x.dateTime,
-            notes: x.note,
-          })),
-        );
-        await reload();
-      }
-      setError("");
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Yedek dosyası okunamadı veya buluta aktarılamadı.",
-      );
-    }
+    const { data, error: restoreError } = await supabase.rpc(
+      "restore_gurminik_backup_v2",
+      { payload, restore_mode: mode },
+    );
+    if (restoreError) throw restoreError;
+    restoreBackupSettings(session.user.id, payload.settings);
+    await reload();
+    setError("");
+    return data as RestoreReport;
   }
   async function importVCardContacts(
     rows: ParsedVCardContact[],
@@ -2368,8 +2284,7 @@ export default function Home() {
           )}
           {canView("backup") && view === "backup" && (
             <Backup
-              state={state}
-              cold={canView("cold_storage") ? cold : undefined}
+              createBackup={createBackup}
               importBackup={importBackup}
               financeUnlocked={financeUnlocked}
               requestFinanceUnlock={requestFinanceUnlock}
@@ -5843,48 +5758,96 @@ function PriceHistory({
 }
 
 function Backup({
-  state,
-  cold,
+  createBackup,
   importBackup,
   financeUnlocked,
   requestFinanceUnlock,
   permission,
 }: {
-  state: State;
-  cold?: ColdState;
-  importBackup: (file: File) => Promise<void>;
+  createBackup: () => Promise<BackupPayload>;
+  importBackup: (
+    payload: BackupPayload,
+    mode: RestoreMode,
+  ) => Promise<RestoreReport>;
   financeUnlocked: boolean;
   requestFinanceUnlock: () => void;
   permission: Permission;
 }) {
-  function exportBackup() {
+  const [preview, setPreview] = useState<{
+      name: string;
+      payload: BackupPayload;
+      summary: ReturnType<typeof backupSummary>;
+    } | null>(null),
+    [mode, setMode] = useState<RestoreMode>("merge"),
+    [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  async function exportBackup() {
     if (!financeUnlocked) {
       requestFinanceUnlock();
       return;
     }
-    const payload = {
-      app: "GURMİNİK",
-      version: 8,
-      exportedAt: new Date().toISOString(),
-      ...state,
-      sales: state.sales.map((x) => ({
-        ...x,
-        productName:
-          state.products.find((p) => p.id === x.productId)?.name || "",
-      })),
-      records: state.purchases,
-      ...(cold ? { coldStorage: cold } : {}),
-    };
-    const url = URL.createObjectURL(
+    setBusy(true);
+    setMessage("");
+    try {
+      const payload = await createBackup();
+      const url = URL.createObjectURL(
         new Blob([JSON.stringify(payload, null, 2)], {
           type: "application/json",
         }),
-      ),
-      a = document.createElement("a");
-    a.href = url;
-    a.download = `gurminik-json-yedek-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+        ),
+        a = document.createElement("a");
+      a.href = url;
+      a.download = `gurminik-json-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMessage("Eksiksiz JSON yedeği oluşturuldu.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Yedek oluşturulamadı.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function chooseFile(file: File) {
+    setMessage("");
+    try {
+      const payload = normalizeBackupPayload(JSON.parse(await file.text()));
+      setPreview({ name: file.name, payload, summary: backupSummary(payload) });
+      setMode("merge");
+    } catch (error) {
+      setPreview(null);
+      setMessage(
+        error instanceof Error ? error.message : "Geçersiz JSON yedeği.",
+      );
+    }
+  }
+  async function restore() {
+    if (!preview) return;
+    if (
+      mode === "replace" &&
+      !window.confirm(
+        "TAM GERİ YÜKLEME mevcut hesabınıza ait işletme kayıtlarını silip yedekteki kayıtlarla değiştirebilir. Bu işlem açıkça onaylanmadan başlamaz. Devam edilsin mi?",
+      )
+    )
+      return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const report = await importBackup(preview.payload, mode);
+      setMessage(
+        `Geri yükleme başarıyla tamamlandı.\n${formatRestoreReport(report)}`,
+      );
+      setPreview(null);
+    } catch (error) {
+      setMessage(
+        `Geri yükleme tamamlanmadı; hiçbir bölüm tamamlanmış sayılmadı.\n${
+          error instanceof Error ? error.message : "Bilinmeyen hata"
+        }`,
+      );
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <>
@@ -5910,9 +5873,9 @@ function Backup({
             Uygulamadaki bütün bilgilerin güncel bir kopyasını bilgisayarınıza
             kaydedin.
           </p>
-          <Button onClick={exportBackup}>
-            <Download />
-            JSON yedeği indir
+          <Button onClick={exportBackup} disabled={busy}>
+            {busy ? <RefreshCw className="animate-spin" /> : <Download />}
+            {busy ? "Hazırlanıyor…" : "JSON yedeği indir"}
           </Button>
         </article>
         {permission.can_create && (
@@ -5933,14 +5896,75 @@ function Backup({
                 accept=".json,application/json"
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
-                  if (f) await importBackup(f);
+                  if (f) await chooseFile(f);
                   e.currentTarget.value = "";
                 }}
               />
             </label>
+            {preview && (
+              <div className="gurminik-backup-preview">
+                <strong>Yedek önizlemesi</strong>
+                <span>{preview.name}</span>
+                <small>
+                  Sürüm {preview.payload.backupVersion} · Oluşturulma: {" "}
+                  {preview.payload.createdAt
+                    ? dateTime(preview.payload.createdAt)
+                    : "Eski yedek"}
+                </small>
+                <div className="gurminik-backup-summary">
+                  <span>{preview.summary.products} ürün</span>
+                  <span>{preview.summary.purchases} alış</span>
+                  <span>{preview.summary.sales} satış</span>
+                  <span>{preview.summary.expenses} gider</span>
+                  <span>{preview.summary.accountPayments} cari hareket</span>
+                  <span>{preview.summary.contacts} kişi</span>
+                  <span>{preview.summary.favorites} favori</span>
+                  <span>{preview.summary.shipments} sevkiyat</span>
+                  <span>{preview.summary.coldPurchases} Soğuk Hava alış</span>
+                  <span>{preview.summary.coldSales} Soğuk Hava satış</span>
+                  <span>{preview.summary.coldExpenses} Soğuk Hava gider</span>
+                  <span>{preview.summary.coldFire} Fire kaydı</span>
+                </div>
+                <div className="gurminik-restore-modes">
+                  <label>
+                    <input
+                      type="radio"
+                      name="restoreMode"
+                      checked={mode === "merge"}
+                      onChange={() => setMode("merge")}
+                    />
+                    <span>
+                      <b>Mevcut verilerle birleştir</b>
+                      <small>Güvenli varsayılan; mevcut kayıtları silmez.</small>
+                    </span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="restoreMode"
+                      checked={mode === "replace"}
+                      onChange={() => setMode("replace")}
+                    />
+                    <span>
+                      <b>Yedeği tam geri yükle</b>
+                      <small>Mevcut verileri değiştirebilir; ayrıca onay ister.</small>
+                    </span>
+                  </label>
+                </div>
+                <Button onClick={restore} disabled={busy}>
+                  {busy ? <RefreshCw className="animate-spin" /> : <Upload />}
+                  {busy ? "Geri yükleniyor…" : "Onayla ve geri yükle"}
+                </Button>
+              </div>
+            )}
           </article>
         )}
       </div>
+      {message && (
+        <div className="gurminik-import-result gurminik-backup-result" role="status">
+          {message}
+        </div>
+      )}
     </>
   );
 }

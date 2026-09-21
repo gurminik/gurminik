@@ -1385,6 +1385,77 @@ select {
   display: none;
 }
 
+.gurminik-backup-preview {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #d8d3cc;
+  border-radius: 13px;
+  background: #f8f7f5;
+}
+
+.gurminik-backup-preview > span,
+.gurminik-backup-preview > small {
+  overflow-wrap: anywhere;
+  color: #6d6f72;
+}
+
+.gurminik-backup-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.gurminik-backup-summary span {
+  padding: 8px 9px;
+  border-radius: 8px;
+  color: #4f4439;
+  background: #eee8e1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.gurminik-restore-modes {
+  display: grid;
+  gap: 8px;
+}
+
+.gurminik-restore-modes label {
+  display: flex;
+  min-height: 58px;
+  cursor: pointer;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid #ddd8d2;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.gurminik-restore-modes input {
+  width: 19px;
+  height: 19px;
+  margin-top: 2px;
+  accent-color: #a45f2b;
+}
+
+.gurminik-restore-modes span,
+.gurminik-restore-modes small {
+  display: grid;
+  gap: 3px;
+}
+
+.gurminik-restore-modes small {
+  color: #77797b;
+  line-height: 1.35;
+}
+
+.gurminik-backup-result {
+  margin-top: 16px;
+  white-space: pre-line;
+}
+
 .gurminik-vcard-button {
   display: inline-flex;
   min-height: 40px;

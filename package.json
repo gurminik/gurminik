@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "npx serve out",
     "lint": "eslint . --ignore-pattern out",
-    "test:features": "node scripts/verify-features.mjs && node --experimental-strip-types scripts/verify-date-fire.mjs",
+    "test:features": "node scripts/verify-features.mjs && node --experimental-strip-types scripts/verify-date-fire.mjs && node --experimental-strip-types scripts/verify-backup.mjs",
     "deploy": "npm run build && wrangler pages deploy out --project-name gurminik"
   },
   "dependencies": {

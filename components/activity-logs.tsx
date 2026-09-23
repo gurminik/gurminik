@@ -69,7 +69,7 @@ export function ActivityLogs({
       .order("created_at", { ascending: false }).order("id", { ascending: false })
       .range(from, from + PAGE_SIZE - 1);
     if (error) setMessage(error.message);
-    else { setRows((data || []) as ActivityLog[]); setTotal(count || 0); }
+    else { setRows((data || []) as unknown as ActivityLog[]); setTotal(count || 0); }
     setLoading(false);
   }, [page, queryBase]);
   useEffect(() => {

@@ -19,18 +19,23 @@ for (const token of [
   'label: "Favoriler"',
   'label: "Gider Gir"',
   'label: "Telefon Numaraları"',
+  'label: "Sıralamalar"',
   'label: "İşlem Geçmişi"',
   "MOBILE_STATE_CACHE_KEY",
   "fetchMobileState",
   "compactMobile",
   "onSaved?.(action)",
   "admin_set_gurminik_user_access_v2",
+  '"get_mobile_ranking_rows"',
+  "onFavoriteChanged",
 ]) assert.ok(page.includes(token), `Eksik mobil uygulama işareti: ${token}`);
 
 for (const token of [
   ".gurminik-worker-grid",
   "grid-template-columns:repeat(3",
   ".gurminik-worker-grid>button.is-logout",
+  ".gurminik-mobile-ranking",
+  "grid-template-columns:repeat(3,minmax(0,1fr));gap:6px",
 ]) assert.ok(styles.includes(token), `Eksik mobil stil: ${token}`);
 
 assert.ok(activity.includes("compact = false"), "İşlem geçmişi sade görünümü eksik");
@@ -48,5 +53,16 @@ for (const token of [
   "jsonb_build_object('source','mobile_worker')",
 ]) assert.ok(migration.includes(token), `Eksik RLS/migration işareti: ${token}`);
 
-assert.ok(worker.includes("gurminik-shell-v14"), "Service worker önbelleği güncellenmedi");
+const rankingMigration = readFileSync(
+  "supabase/migrations/20260923192737_mobile_worker_ranking.sql",
+  "utf8",
+);
+for (const token of [
+  "get_mobile_ranking_rows",
+  "private.has_gurminik_permission('ranking', 'view')",
+  "quantity_kg numeric",
+  "revoke all on function public.get_mobile_ranking_rows() from public, anon",
+]) assert.ok(rankingMigration.includes(token), `Eksik mobil sıralama güvenliği: ${token}`);
+
+assert.ok(worker.includes("gurminik-shell-v15"), "Service worker önbelleği güncellenmedi");
 console.log("Sade mobil çalışan modu statik doğrulamaları başarılı.");

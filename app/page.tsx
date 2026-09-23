@@ -715,8 +715,11 @@ export default function Home() {
           permissions.expenses?.can_create || permissions.expenses?.can_view,
         ),
         contactAccess = Boolean(permissions.contacts?.can_view),
-        favoriteAccess = Boolean(permissions.favorites?.can_view),
-        productAccess = purchaseAccess || saleAccess || favoriteAccess;
+        favoriteAccess = Boolean(
+          permissions.favorites?.can_view || permissions.favorites?.can_create,
+        ),
+        rankingAccess = Boolean(permissions.ranking?.can_view),
+        productAccess = purchaseAccess || saleAccess || favoriteAccess || rankingAccess;
 
       const [products, purchases, sales, categories, contactCategories, contacts, favorites] =
         await Promise.all([
@@ -2403,6 +2406,39 @@ export default function Home() {
       if (type === "purchase") openPurchase(activeProduct.id);
       else openSale(activeProduct.id);
     };
+    const openMobileRanking = async () => {
+      setLoading(true);
+      setError("");
+      const { data, error: rankingError } = await supabase.rpc(
+        "get_mobile_ranking_rows",
+      );
+      if (rankingError) {
+        setError(rankingError.message || "Sıralamalar yüklenemedi.");
+        setLoading(false);
+        return;
+      }
+      setState((previous) => {
+        const known = new Set(previous.purchases.map((row) => row.id));
+        const sanitized = ((data || []) as Record<string, unknown>[])
+          .filter((row) => !known.has(String(row.id)))
+          .map((row) => ({
+            id: String(row.id),
+            productId: String(row.product_id),
+            person: String(row.supplier_name),
+            plate: String(row.vehicle_plate || ""),
+            kg: Number(row.quantity_kg),
+            buyPrice: 0,
+            dateTime: String(row.transaction_at),
+            status: String(row.status || "active"),
+            cancelledAt: null,
+            isPaid: true,
+            createdAt: String(row.created_at || ""),
+          }));
+        return { ...previous, purchases: [...previous.purchases, ...sanitized] };
+      });
+      setView("ranking");
+      setLoading(false);
+    };
     const mobileActions = [
       permissionFor("purchases").can_create && {
         id: "purchase", label: "Alış Gir", icon: Boxes,
@@ -2423,6 +2459,10 @@ export default function Home() {
       canView("contacts") && {
         id: "contacts", label: "Telefon Numaraları", icon: Phone,
         run: () => setView("contacts"),
+      },
+      canView("ranking") && {
+        id: "ranking", label: "Sıralamalar", icon: Trophy,
+        run: () => void openMobileRanking(),
       },
       canView("activity_logs") && {
         id: "activity_logs", label: "İşlem Geçmişi", icon: History,
@@ -2517,6 +2557,16 @@ export default function Home() {
               mutate={mutate}
               importContacts={importVCardContacts}
               permission={permissionFor("contacts")}
+            />
+          )}
+          {view === "ranking" && canView("ranking") && (
+            <Ranking
+              state={state}
+              live={state.purchases.filter((row) => row.status !== "cancelled")}
+              mutate={mutate}
+              favoritePermission={permissionFor("favorites")}
+              compactMobile
+              onFavoriteChanged={setSyncNotice}
             />
           )}
           {view === "activity_logs" && canView("activity_logs") && (
@@ -4145,11 +4195,15 @@ function Ranking({
   live,
   mutate,
   favoritePermission,
+  compactMobile = false,
+  onFavoriteChanged,
 }: {
   state: State;
   live: Purchase[];
   mutate: (a: string, d: Record<string, unknown>) => Promise<void>;
   favoritePermission: Permission;
+  compactMobile?: boolean;
+  onFavoriteChanged?: (message: string) => void;
 }) {
   const [start, setStart] = useState(""),
     [end, setEnd] = useState(""),
@@ -4239,6 +4293,7 @@ function Ranking({
     if (!person) return;
     if (favorite) {
       await mutate("deleteFavorite", { id: favorite.id });
+      onFavoriteChanged?.(`${person.name} favorilerden çıkarıldı.`);
       return;
     }
     const latest = live.find((row) => norm(row.person) === person.key);
@@ -4251,17 +4306,18 @@ function Ranking({
       lastBuyPrice: latest?.buyPrice ?? null,
       notes: "Sıralamalar ekranından eklendi",
     });
+    onFavoriteChanged?.(`${person.name} favorilere eklendi.`);
   }
   return (
     <div className="grid gap-5">
-      <section className="gurminik-panel gurminik-ranking-toolbar">
+      <section className={`gurminik-panel gurminik-ranking-toolbar ${compactMobile ? "is-compact" : ""}`}>
         <div>
-          <p className="gurminik-eyebrow">TEDARİKÇİ MATRİSİ</p>
-          <h3>Ürün bazında tek sıralama</h3>
-          <span>
+          <p className="gurminik-eyebrow">{compactMobile ? "KİŞİ SIRALAMASI" : "TEDARİKÇİ MATRİSİ"}</p>
+          <h3>{compactMobile ? "Tedarikçiler" : "Ürün bazında tek sıralama"}</h3>
+          {!compactMobile && <span>
             Bir sütun başlığına dokunarak büyükten küçüğe veya küçükten büyüğe
             sıralayın.
-          </span>
+          </span>}
         </div>
         <div className="gurminik-range-inputs">
           <label>
@@ -4293,7 +4349,31 @@ function Ranking({
           )}
         </div>
       </section>
-      <section className="gurminik-table-panel gurminik-ranking-table">
+      {compactMobile ? (
+        <section className="gurminik-mobile-ranking">
+          <div className="gurminik-mobile-ranking-sort">
+            <select
+              aria-label="Sıralama ölçütü"
+              value={sort.key}
+              onChange={(event) => setSort({ key: event.target.value, direction: "desc" })}
+            >
+              <option value="total">Toplam KG</option>
+              {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+            </select>
+            <button onClick={() => changeSort(sort.key)} aria-label="Sıralama yönünü değiştir">
+              <SortDirectionIcon active direction={sort.direction} />
+            </button>
+          </div>
+          <div className="gurminik-mobile-ranking-list">
+            {rows.map((row, index) => (
+              <button key={row.key} onClick={() => setSelected(row.key)}>
+                <b>{index + 1}</b><span><strong>{row.name}</strong><small>{kg(row.total)}</small></span><ChevronRight />
+              </button>
+            ))}
+            {!rows.length && <div className="gurminik-panel gurminik-empty">Seçilen dönemde alış kaydı bulunamadı.</div>}
+          </div>
+        </section>
+      ) : <section className="gurminik-table-panel gurminik-ranking-table">
         <Table>
           <TableHeader>
             <TableRow>
@@ -4355,7 +4435,7 @@ function Ranking({
             )}
           </TableBody>
         </Table>
-      </section>
+      </section>}
       <Dialog
         open={!!person}
         onOpenChange={(open) => {
@@ -4374,7 +4454,7 @@ function Ranking({
             <div className="grid gap-5">
               <div className="gurminik-summary-grid">
                 <Stat label="Toplam miktar" value={kg(person.total)} />
-                <Stat label="Toplam alış tutarı" value={money(person.amount)} />
+                {!compactMobile && <Stat label="Toplam alış tutarı" value={money(person.amount)} />}
                 <Stat label="Araç plakası" value={person.plate || "—"} />
               </div>
               <div className="gurminik-person-products">
@@ -4385,7 +4465,7 @@ function Ranking({
                   </div>
                 ))}
               </div>
-              <div className="gurminik-person-contact">
+              {!compactMobile && <div className="gurminik-person-contact">
                 <PhoneCall />
                 <div>
                   <span>Telefon numarası</span>
@@ -4395,7 +4475,7 @@ function Ranking({
                     <strong>Kayıtlı numara yok</strong>
                   )}
                 </div>
-              </div>
+              </div>}
               {(favorite && favoritePermission.can_delete) ||
               (!favorite && favoritePermission.can_create) ? (
                 <Button
@@ -4405,6 +4485,8 @@ function Ranking({
                   <Star className={favorite ? "fill-current" : ""} />
                   {favorite ? "Favorilerden Çıkar" : "Favorilere Ekle"}
                 </Button>
+              ) : favorite ? (
+                <div className="gurminik-favorite-confirmed"><Star className="fill-current" /> Favorilerde</div>
               ) : null}
             </div>
           )}

@@ -1,6 +1,6 @@
 // Bump the shell cache when the deployed application changes.
 // Offline records live in localStorage and are never cleared by this worker.
-const CACHE_NAME="gurminik-shell-v14";
+const CACHE_NAME="gurminik-shell-v15";
 const APP_SHELL=["/manifest.webmanifest","/favicon.svg","/icon-192.png","/icon-512.png"];
 
 async function cacheApplicationShell(){

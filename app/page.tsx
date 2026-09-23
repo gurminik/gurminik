@@ -22,6 +22,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  History,
   LayoutDashboard,
   LockKeyhole,
   LogOut,
@@ -98,6 +99,7 @@ import {
   coldSummary,
 } from "@/lib/cold-storage";
 import { ColdStorage, ColdReport } from "@/components/cold-storage";
+import { ActivityLogs, type ActivityLog } from "@/components/activity-logs";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import {
   inRememberedDateRange,
@@ -200,6 +202,7 @@ type PendingOperation = {
   action: string;
   data: Record<string, unknown>;
   createdAt: string;
+  epoch?: string;
 };
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -216,7 +219,8 @@ type ModuleId =
   | "favorites"
   | "cold_storage"
   | "reports"
-  | "backup";
+  | "backup"
+  | "activity_logs";
 type View = ModuleId | "authorization";
 type Permission = {
   can_view: boolean;
@@ -379,6 +383,7 @@ const MODULE_LABELS: Record<ModuleId, string> = {
   cold_storage: "Soğuk Hava",
   reports: "Raporlar",
   backup: "Yedekleme",
+  activity_logs: "İşlem Geçmişi",
 };
 const MODULE_IDS = Object.keys(MODULE_LABELS) as ModuleId[];
 const NO_ACCESS: AccessState = {
@@ -420,6 +425,7 @@ export default function Home() {
     [pendingCount, setPendingCount] = useState(0),
     [syncing, setSyncing] = useState(false),
     [syncNotice, setSyncNotice] = useState("");
+  const [businessEpoch, setBusinessEpoch] = useState("");
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(
     null,
   );
@@ -461,6 +467,22 @@ export default function Home() {
       ...(data || {}),
       permissions: data?.permissions || {},
     } as AccessState;
+  }, []);
+  const refreshBusinessEpoch = useCallback(async (userId: string) => {
+    const key = `gurminik_business_epoch:${userId}`;
+    const cached = localStorage.getItem(key) || "";
+    if (cached) setBusinessEpoch(cached);
+    if (!navigator.onLine) return cached;
+    const { data, error: epochError } = await supabase.rpc(
+      "get_gurminik_business_state",
+    );
+    if (epochError) throw epochError;
+    const epoch = String(data?.epoch || "");
+    if (epoch) {
+      localStorage.setItem(key, epoch);
+      setBusinessEpoch(epoch);
+    }
+    return epoch;
   }, []);
 
   const fetchState = useCallback(async () => {
@@ -844,6 +866,7 @@ export default function Home() {
       setAccessReady(false);
       if (next) {
         try {
+          await refreshBusinessEpoch(next.user.id);
           const nextAccess = await fetchAccess();
           if (!active) return;
           setAccess(nextAccess);
@@ -887,7 +910,7 @@ export default function Home() {
       active = false;
       subscription.unsubscribe();
     };
-  }, [fetchAccess, load]);
+  }, [fetchAccess, load, refreshBusinessEpoch]);
   const executeMutation = useCallback(
     async (action: string, data: Record<string, unknown>) => {
       let result;
@@ -1161,7 +1184,7 @@ export default function Home() {
       else if (action === "deleteFavorite")
         result = await supabase.from("favorites").delete().eq("id", data.id);
       else if (action === "importBackup") {
-        result = await supabase.rpc("restore_gurminik_backup_v2", {
+        result = await supabase.rpc("restore_gurminik_backup_v3", {
           payload: data,
           restore_mode: "merge",
         });
@@ -1564,6 +1587,7 @@ export default function Home() {
         action,
         data,
         createdAt: new Date().toISOString(),
+        epoch: businessEpoch,
       });
       saveQueue(userId, items);
       setPendingCount(items.length);
@@ -1595,7 +1619,23 @@ export default function Home() {
   }
   const flushQueue = useCallback(async () => {
     const userId = session?.user.id || "",
-      items = readQueue(userId);
+      queued = readQueue(userId);
+    let currentEpoch = businessEpoch;
+    try {
+      currentEpoch = await refreshBusinessEpoch(userId);
+    } catch {
+      return;
+    }
+    const items = queued.filter(
+      (item) => !!item.epoch && item.epoch === currentEpoch,
+    );
+    if (items.length !== queued.length) {
+      saveQueue(userId, items);
+      setPendingCount(items.length);
+      setSyncNotice(
+        "Eski sezona ait bekleyen kayıtlar güvenlik nedeniyle yeniden gönderilmedi.",
+      );
+    }
     if (!items.length || !navigator.onLine) return;
     setSyncing(true);
     let remaining = [...items];
@@ -1613,7 +1653,7 @@ export default function Home() {
     } finally {
       setSyncing(false);
     }
-  }, [executeMutation, reload, session?.user.id]);
+  }, [businessEpoch, executeMutation, refreshBusinessEpoch, reload, session?.user.id]);
   useEffect(() => {
     const userId = session?.user.id || "",
       initialize = window.setTimeout(() => {
@@ -1713,7 +1753,7 @@ export default function Home() {
     if (!navigator.onLine)
       throw new Error("Eksiksiz yedek almak için internet bağlantısı gerekir.");
     const { data, error: backupError } = await supabase.rpc(
-      "export_gurminik_backup_v2",
+      "export_gurminik_backup_v3",
     );
     if (backupError) throw backupError;
     return normalizeBackupPayload({
@@ -1737,7 +1777,7 @@ export default function Home() {
         "Soğuk Hava yedeğini aktarmak için bu modülde ekleme yetkisi gerekir.",
       );
     const { data, error: restoreError } = await supabase.rpc(
-      "restore_gurminik_backup_v2",
+      "restore_gurminik_backup_v3",
       { payload, restore_mode: mode },
     );
     if (restoreError) throw restoreError;
@@ -1745,6 +1785,21 @@ export default function Home() {
     await reload();
     setError("");
     return data as RestoreReport;
+  }
+  async function logPdfExport(
+    exportModule: "reports" | "cold_storage",
+    reportName: string,
+    start?: string | null,
+    end?: string | null,
+  ) {
+    const { error: logError } = await supabase.rpc("log_gurminik_export", {
+      export_module: exportModule,
+      report_name: reportName,
+      date_start: start || null,
+      date_end: end || null,
+      filters: {},
+    });
+    if (logError) setSyncNotice("PDF indirildi; işlem geçmişi kaydı daha sonra yenilenecek.");
   }
   async function importVCardContacts(
     rows: ParsedVCardContact[],
@@ -1788,6 +1843,10 @@ export default function Home() {
       .select("id");
     if (inserted.error) throw inserted.error;
     const added = inserted.data?.length || 0;
+    await supabase.rpc("log_gurminik_contact_import", {
+      added_count: added,
+      skipped_count: rows.length - added,
+    });
     await reload();
     setSyncNotice("Rehber kişileri bulutla senkronize edildi.");
     return { added, skipped: rows.length - added };
@@ -1973,6 +2032,8 @@ export default function Home() {
   const title =
     view === "authorization"
       ? "Yetkilendirme"
+      : view === "activity_logs"
+        ? "İşlem Geçmişi"
       : NAV.find((x) => x[0] === view)?.[1] || "Erişim Bekleniyor";
   const productName = (id: string) =>
     state.products.find((p) => p.id === id)?.name || "Ürün";
@@ -1986,6 +2047,50 @@ export default function Home() {
   }
   function requestFinanceUnlock() {
     setDialog("unlockFinance");
+  }
+  function openActivityTarget(row: ActivityLog) {
+    if (row.action_type === "delete") {
+      window.alert("Bu kayıt daha sonra silinmiş. İşlem özeti geçmişte korunuyor.");
+      return;
+    }
+    if (row.entity_type === "purchases") {
+      const record = state.purchases.find((x) => x.id === row.entity_id);
+      if (!record) return void window.alert("Bu kayıt daha sonra silinmiş.");
+      setSelectedPurchase(record); setSelectedProduct(record.productId); setDialog("editPurchase");
+    } else if (row.entity_type === "sales") {
+      const record = state.sales.find((x) => x.id === row.entity_id);
+      if (!record) return void window.alert("Bu kayıt daha sonra silinmiş.");
+      setSelectedSale(record); setSelectedProduct(record.productId); setDialog("editSale");
+    } else if (row.module === "expenses") setView("expenses");
+    else if (row.module === "accounts") setView("accounts");
+    else if (row.module === "contacts") { setContactSearch(row.person_name || ""); setView("contacts"); }
+    else if (row.module === "favorites") setView("favorites");
+    else if (row.module === "cold_storage") setView("cold_storage");
+    else if (row.module === "backup") setView("backup");
+    else if (row.module === "reports") setView("reports");
+    else if (row.module === "dashboard") setView("dashboard");
+  }
+  async function finishApplicationReset(result: Record<string, unknown>) {
+    const userId = session?.user.id;
+    if (!userId) return;
+    localStorage.removeItem(queueKey(userId));
+    localStorage.removeItem(`${STATE_CACHE_KEY}:${userId}`);
+    localStorage.removeItem(`${STATE_CACHE_KEY}:${userId}:cold`);
+    const epoch = String(result.epoch || "");
+    if (epoch) {
+      localStorage.setItem(`gurminik_business_epoch:${userId}`, epoch);
+      setBusinessEpoch(epoch);
+    }
+    if ("databases" in indexedDB) {
+      try {
+        const databases = await indexedDB.databases();
+        databases.forEach((db) => {
+          if (db.name?.toLocaleLowerCase("tr-TR").startsWith("gurminik")) indexedDB.deleteDatabase(db.name);
+        });
+      } catch {}
+    }
+    setPendingCount(0); setState(EMPTY); setCold(EMPTY_COLD); setView("dashboard");
+    setSyncNotice("Uygulama başarıyla sıfırlandı. Yeni sezon kayıtlarına başlayabilirsiniz.");
   }
 
   return (
@@ -2060,6 +2165,15 @@ export default function Home() {
               Finansı kilitle
             </button>
           )}
+          {canView("activity_logs") && (
+            <button
+              onClick={() => { setView("activity_logs"); setMobile(false); }}
+              className={`gurminik-logout ${view === "activity_logs" ? "is-active" : ""}`}
+            >
+              <History className="size-4" />
+              İşlem Geçmişi
+            </button>
+          )}
           <button
             onClick={() => supabase.auth.signOut()}
             className="gurminik-logout"
@@ -2125,6 +2239,7 @@ export default function Home() {
           {!access.is_active && <AccessWaiting inactive />}
           {access.is_active &&
             visibleNav.length === 0 &&
+            !canView("activity_logs") &&
             access.role !== "admin" && <AccessWaiting />}
           {access.is_active && canView("dashboard") && view === "dashboard" && (
             <Dashboard
@@ -2272,12 +2387,14 @@ export default function Home() {
                 setRangeStart={setRangeStart}
                 rangeEnd={rangeEnd}
                 setRangeEnd={setRangeEnd}
+                onPdfExport={logPdfExport}
               />
               {canView("cold_storage") && (
                 <ColdReport
                   state={cold}
                   financeUnlocked={financeUnlocked}
                   requestFinanceUnlock={requestFinanceUnlock}
+                  onPdfExport={(name, start, end) => logPdfExport("cold_storage", name, start, end)}
                 />
               )}
             </>
@@ -2291,8 +2408,20 @@ export default function Home() {
               permission={permissionFor("backup")}
             />
           )}
+          {canView("activity_logs") && view === "activity_logs" && (
+            <ActivityLogs
+              userId={session.user.id}
+              onOpen={openActivityTarget}
+              financeUnlocked={financeUnlocked}
+              requestFinanceUnlock={requestFinanceUnlock}
+            />
+          )}
           {access.role === "admin" && view === "authorization" && (
-            <AuthorizationPanel currentUserId={session.user.id} />
+            <AuthorizationPanel
+              currentUserId={session.user.id}
+              createBackup={createBackup}
+              onReset={finishApplicationReset}
+            />
           )}
         </div>
       </main>
@@ -2337,7 +2466,15 @@ function AccessWaiting({ inactive = false }: { inactive?: boolean }) {
   );
 }
 
-function AuthorizationPanel({ currentUserId }: { currentUserId: string }) {
+function AuthorizationPanel({
+  currentUserId,
+  createBackup,
+  onReset,
+}: {
+  currentUserId: string;
+  createBackup: () => Promise<BackupPayload>;
+  onReset: (result: Record<string, unknown>) => Promise<void>;
+}) {
   const [verified, setVerified] = useState(false),
     [password, setPassword] = useState(""),
     [users, setUsers] = useState<AdminUser[]>([]),
@@ -2345,6 +2482,10 @@ function AuthorizationPanel({ currentUserId }: { currentUserId: string }) {
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [panelError, setPanelError] = useState("");
+  const [resetOpen, setResetOpen] = useState(false),
+    [resetPassword, setResetPassword] = useState(""),
+    [resetPhrase, setResetPhrase] = useState(""),
+    [resetReport, setResetReport] = useState<Record<string, number> | null>(null);
   async function loadUsers() {
     const { data, error } = await supabase.rpc("admin_list_gurminik_users");
     if (error) throw error;
@@ -2448,6 +2589,38 @@ function AuthorizationPanel({ currentUserId }: { currentUserId: string }) {
     } finally {
       setBusy(false);
     }
+  }
+  async function downloadBeforeReset() {
+    setBusy(true); setPanelError("");
+    try {
+      const payload = await createBackup();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}));
+      const link = document.createElement("a");
+      link.href=url; link.download=`gurminik-sifirlama-oncesi-${new Date().toISOString().slice(0,10)}.json`; link.click();
+      URL.revokeObjectURL(url);
+      setMessage("Sıfırlama öncesi tam JSON yedeği indirildi.");
+    } catch (error) { setPanelError(error instanceof Error ? error.message : "Yedek indirilemedi."); }
+    finally { setBusy(false); }
+  }
+  async function resetApplication() {
+    if (resetPhrase !== "TÜM VERİLERİ SİL") {
+      setPanelError("Onay alanına TÜM VERİLERİ SİL yazın."); return;
+    }
+    setBusy(true); setPanelError(""); setMessage("");
+    try {
+      const { data, error } = await supabase.rpc("reset_gurminik_application", {
+        input_password: resetPassword,
+        confirmation_text: resetPhrase,
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || "Sıfırlama doğrulanamadı.");
+      const deleted = (data.deleted || {}) as Record<string, number>;
+      setResetReport(deleted);
+      setResetPassword(""); setResetPhrase("");
+      await onReset(data as Record<string, unknown>);
+      setMessage("Uygulama başarıyla sıfırlandı. Yeni sezon kayıtlarına başlayabilirsiniz.");
+    } catch (error) { setPanelError(error instanceof Error ? error.message : "Sıfırlama tamamlanamadı."); }
+    finally { setBusy(false); }
   }
   if (!verified)
     return (
@@ -2604,6 +2777,34 @@ function AuthorizationPanel({ currentUserId }: { currentUserId: string }) {
           );
         })}
       </div>
+      <section className="gurminik-danger-zone gurminik-panel">
+        <div>
+          <p>TEHLİKELİ İŞLEMLER</p>
+          <h3>Uygulamayı yeni sezon için sıfırla</h3>
+          <span>Auth hesapları, yetkiler, Supabase yapısı ve uygulama yayını korunur; işletme kayıtları kalıcı olarak silinir.</span>
+        </div>
+        <Button variant="destructive" onClick={() => { setResetOpen(true); setResetReport(null); }}>
+          <Trash2 />Uygulamayı Sıfırla
+        </Button>
+      </section>
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="gurminik-dialog gurminik-reset-dialog">
+          <DialogHeader>
+            <DialogTitle>Uygulamayı tamamen sıfırla</DialogTitle>
+            <DialogDescription>Bu işlem işletmeye ait kayıtları kalıcı olarak silecektir. Bu işlem geri alınamaz.</DialogDescription>
+          </DialogHeader>
+          {resetReport ? <div className="gurminik-reset-report">
+            <h4>Uygulama başarıyla sıfırlandı</h4>
+            {Object.entries(resetReport).map(([key,value]) => <p key={key}><span>{key}</span><b>{Number(value).toLocaleString("tr-TR")} kayıt</b></p>)}
+            <Button onClick={() => setResetOpen(false)}>Tamam</Button>
+          </div> : <div className="gurminik-reset-steps">
+            <div className="gurminik-reset-warning"><strong>1. Önce yedek alın</strong><span>Zorunlu değildir; geri dönüş için önerilir.</span><Button variant="outline" onClick={() => void downloadBeforeReset()} disabled={busy}><Download />Sıfırlamadan Önce Tam JSON Yedeğini İndir</Button></div>
+            <label><b>2. Özel sıfırlama şifresi</b><Input type="password" autoComplete="off" value={resetPassword} onChange={(e)=>setResetPassword(e.target.value)} placeholder="Sunucuda doğrulanır" /></label>
+            <label><b>3. Son onay</b><span>Devam etmek için aşağıya TÜM VERİLERİ SİL yazın.</span><Input value={resetPhrase} onChange={(e)=>setResetPhrase(e.target.value)} placeholder="TÜM VERİLERİ SİL" /></label>
+            <Button variant="destructive" disabled={busy || !resetPassword || resetPhrase!=="TÜM VERİLERİ SİL"} onClick={() => void resetApplication()}>{busy?<RefreshCw className="animate-spin"/>:<Trash2/>}{busy?"Güvenli şekilde sıfırlanıyor…":"Bütün işletme verilerini kalıcı sil"}</Button>
+          </div>}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -5353,6 +5554,7 @@ function Reports({
   setRangeStart,
   rangeEnd,
   setRangeEnd,
+  onPdfExport,
 }: {
   state: State;
   coldState?: ColdState;
@@ -5366,6 +5568,7 @@ function Reports({
   setRangeStart: (v: string) => void;
   rangeEnd: string;
   setRangeEnd: (v: string) => void;
+  onPdfExport: (module: "reports" | "cold_storage", name: string, start?: string | null, end?: string | null) => Promise<void>;
 }) {
   const { start, end, label } = useMemo(
     () => getRange(period, date, rangeStart, rangeEnd),
@@ -5401,7 +5604,7 @@ function Reports({
       return { name: p.name, kg: k, cost: c, avg: k ? c / k : 0 };
     })
     .filter((x) => x.kg);
-  function print(full = false) {
+  async function print(full = false) {
     if (!financeUnlocked) {
       requestFinanceUnlock();
       return;
@@ -5444,6 +5647,12 @@ function Reports({
           : undefined,
       ),
     );
+    await onPdfExport(
+      "reports",
+      full ? "Tam İşletme Raporu PDF" : `${label} İşletme Raporu PDF`,
+      full ? null : start.toISOString().slice(0,10),
+      full ? null : new Date(end.getTime()-1).toISOString().slice(0,10),
+    );
   }
   return (
     <>
@@ -5456,7 +5665,7 @@ function Reports({
             tam işletme raporu. Finansal tutarlar için şifre gerekir.
           </span>
         </div>
-        <Button onClick={() => print(true)}>
+        <Button onClick={() => void print(true)}>
           {financeUnlocked ? <BarChart3 /> : <LockKeyhole />}Tam PDF raporunu
           indir
         </Button>
@@ -5513,7 +5722,7 @@ function Reports({
               />
             </label>
           )}
-          <Button variant="outline" onClick={() => print(false)}>
+          <Button variant="outline" onClick={() => void print(false)}>
             {financeUnlocked ? <BarChart3 /> : <LockKeyhole />}Bu dönemi PDF
             indir
           </Button>

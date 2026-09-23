@@ -129,6 +129,7 @@ const DATE_SCOPES = [
   "expenses",
   "accounts",
   "cold_storage",
+  "activity_logs",
 ];
 
 export function readBackupSettings(userId: string) {

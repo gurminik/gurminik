@@ -1213,10 +1213,12 @@ export function ColdReport({
   state,
   financeUnlocked,
   requestFinanceUnlock,
+  onPdfExport,
 }: {
   state: ColdState;
   financeUnlocked: boolean;
   requestFinanceUnlock: () => void;
+  onPdfExport?: (name: string, start?: string | null, end?: string | null) => Promise<void>;
 }) {
   const [period, setPeriod] = useState<
       "daily" | "weekly" | "monthly" | "range" | "all"
@@ -1257,7 +1259,7 @@ export function ColdReport({
       return t >= start && t < end;
     }),
     periodExpenseTotal = periodExpenses.reduce((a, x) => a + x.amount, 0);
-  function pdf() {
+  async function pdf() {
     if (end < start) return;
     if (!financeUnlocked) {
       requestFinanceUnlock();
@@ -1281,6 +1283,11 @@ export function ColdReport({
     a.download = `gurminik-soguk-hava-${date}.pdf`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+    await onPdfExport?.(
+      "Soğuk Hava Deposu PDF",
+      Number.isFinite(start) ? new Date(start).toISOString().slice(0,10) : null,
+      Number.isFinite(end) ? new Date(end - 1).toISOString().slice(0,10) : null,
+    );
   }
   return (
     <section className="gurminik-panel cold-report">
@@ -1325,7 +1332,7 @@ export function ColdReport({
             />
           )
         )}
-        <Button onClick={pdf}>
+        <Button onClick={() => void pdf()}>
           <Download size={16} />
           Soğuk Hava PDF indir
         </Button>

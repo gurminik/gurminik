@@ -23,7 +23,7 @@ const PAGE_SIZE = 15;
 const actionLabels: Record<string, string> = {
   create: "Oluşturma", update: "Düzenleme", cancel: "İptal", restore: "Etkinleştirme",
   delete: "Silme", export: "Dışa aktarma", import: "Geri yükleme",
-  permission: "Yetki", system: "Sistem",
+  permission: "Yetki", system: "Sistem", auto_delete: "Otomatik silme",
 };
 const isoStart = (v: string) => v ? new Date(`${v}T00:00:00`).toISOString() : "";
 const isoEnd = (v: string) => v ? new Date(`${v}T23:59:59.999`).toISOString() : "";

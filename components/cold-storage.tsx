@@ -16,6 +16,10 @@ import {
 import { createColdPdf } from "@/lib/cold-pdf";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import {
+  cancellationExpired,
+  cancellationNotice,
+} from "@/lib/cancellation";
+import {
   inRememberedDateRange,
   useRememberedDateRange,
 } from "@/lib/date-range";
@@ -433,6 +437,12 @@ export function ColdStorage({
     kind: "Purchase" | "Sale",
     row: ColdPurchase | ColdSale,
   ) {
+    if (row.status === "cancelled" && cancellationExpired(row.cancelledAt)) {
+      setMessage(
+        "Bu kaydın 7 günlük geri alma süresi doldu; sistem kalıcı silme işlemini tamamlayacak.",
+      );
+      return;
+    }
     if (
       !window.confirm(
         row.status === "cancelled"
@@ -1242,7 +1252,16 @@ function ColdTable({
               {type === "purchase" && (
                 <td>{"plate" in row ? row.plate : "—"}</td>
               )}
-              <td>{row.status === "cancelled" ? "İptal" : "Aktif"}</td>
+              <td>
+                {row.status === "cancelled" ? (
+                  <span className="gurminik-cancellation-state">
+                    <b>İptal</b>
+                    <small>{cancellationNotice(row.cancelledAt)}</small>
+                  </span>
+                ) : (
+                  "Aktif"
+                )}
+              </td>
               <td>
                 <div className="cold-actions">
                   {permission.can_update && (
@@ -1261,6 +1280,10 @@ function ColdTable({
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={
+                        row.status === "cancelled" &&
+                        cancellationExpired(row.cancelledAt)
+                      }
                       onClick={() => toggle(row)}
                     >
                       {row.status === "cancelled" ? "Etkinleştir" : "İptal"}

@@ -18,6 +18,7 @@ const actionLabel: Record<string, string> = {
   import: "Geri yükleme",
   permission: "Yetki değişikliği",
   system: "Sistem",
+  auto_delete: "Otomatik silme",
 };
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {

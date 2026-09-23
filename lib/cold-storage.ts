@@ -9,6 +9,7 @@ export type ColdPurchase = {
   dateTime: string;
   note: string;
   status: string;
+  cancelledAt?: string | null;
 };
 export type ColdSale = {
   id: string;
@@ -20,6 +21,7 @@ export type ColdSale = {
   dateTime: string;
   note: string;
   status: string;
+  cancelledAt?: string | null;
 };
 export type ColdExpense = {
   id: string;

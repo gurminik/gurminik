@@ -88,6 +88,11 @@ import {
 } from "@/lib/business";
 import { fetchAllRows } from "@/lib/pagination";
 import {
+  cancellationExpired,
+  cancellationNotice,
+  isPermanentCancellationError,
+} from "@/lib/cancellation";
+import {
   ColdCategory,
   ColdExpense,
   ColdPurchase,
@@ -133,6 +138,7 @@ type Purchase = {
   buyPrice: number;
   dateTime: string;
   status: string;
+  cancelledAt?: string | null;
   isPaid: boolean;
   createdAt?: string;
 };
@@ -146,6 +152,7 @@ type Sale = {
   sellPrice: number;
   dateTime: string;
   status: string;
+  cancelledAt?: string | null;
   createdBy?: string | null;
   createdAt?: string;
 };
@@ -502,7 +509,7 @@ export default function Home() {
         supabase
           .from("purchases")
           .select(
-            "id,product_id,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,status,is_paid,created_at",
+            "id,product_id,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,status,cancelled_at,is_paid,created_at",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -512,7 +519,7 @@ export default function Home() {
         supabase
           .from("sales")
           .select(
-            "id,product_id,buyer_name,driver_name,vehicle_plate,quantity_kg,unit_sale_price,transaction_at,status,created_by,created_at",
+            "id,product_id,buyer_name,driver_name,vehicle_plate,quantity_kg,unit_sale_price,transaction_at,status,cancelled_at,created_by,created_at",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -608,6 +615,7 @@ export default function Home() {
         buyPrice: Number(x.unit_buy_price),
         dateTime: x.transaction_at,
         status: x.status || "active",
+        cancelledAt: x.cancelled_at,
         isPaid: x.is_paid !== false,
         createdAt: x.created_at,
       })),
@@ -621,6 +629,7 @@ export default function Home() {
         sellPrice: Number(x.unit_sale_price),
         dateTime: x.transaction_at,
         status: x.status || "active",
+        cancelledAt: x.cancelled_at,
         createdBy: x.created_by,
         createdAt: x.created_at,
       })),
@@ -678,7 +687,7 @@ export default function Home() {
         supabase
           .from("cold_storage_purchases")
           .select(
-            "id,product_id,product_name,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,notes,status",
+            "id,product_id,product_name,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,notes,status,cancelled_at",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -688,7 +697,7 @@ export default function Home() {
         supabase
           .from("cold_storage_sales")
           .select(
-            "id,product_id,product_name,buyer_name,quantity_kg,unit_sale_price,transaction_at,notes,status",
+            "id,product_id,product_name,buyer_name,quantity_kg,unit_sale_price,transaction_at,notes,status,cancelled_at",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -730,6 +739,7 @@ export default function Home() {
         dateTime: x.transaction_at,
         note: x.notes,
         status: x.status,
+        cancelledAt: x.cancelled_at,
       })),
       sales: (s.data || []).map((x) => ({
         id: x.id,
@@ -741,6 +751,7 @@ export default function Home() {
         dateTime: x.transaction_at,
         note: x.notes,
         status: x.status,
+        cancelledAt: x.cancelled_at,
       })),
       expenses: (e.data || []).map((x) => ({
         id: x.id,
@@ -1233,16 +1244,26 @@ export default function Home() {
           dateTime,
           note: String(data.note || ""),
           status: "active",
+          cancelledAt: null,
         };
         next.purchases =
           action === "addColdPurchase"
             ? [row, ...prev.purchases]
             : prev.purchases.map((x) =>
-                x.id === row.id ? { ...row, status: x.status } : x,
+                x.id === row.id
+                  ? { ...row, status: x.status, cancelledAt: x.cancelledAt }
+                  : x,
               );
       } else if (action === "toggleColdPurchase")
         next.purchases = prev.purchases.map((x) =>
-          x.id === data.id ? { ...x, status: String(data.status) } : x,
+          x.id === data.id
+            ? {
+                ...x,
+                status: String(data.status),
+                cancelledAt:
+                  data.status === "cancelled" ? new Date().toISOString() : null,
+              }
+            : x,
         );
       else if (action === "addColdSale" || action === "editColdSale") {
         const row: ColdSale = {
@@ -1255,16 +1276,26 @@ export default function Home() {
           dateTime,
           note: String(data.note || ""),
           status: "active",
+          cancelledAt: null,
         };
         next.sales =
           action === "addColdSale"
             ? [row, ...prev.sales]
             : prev.sales.map((x) =>
-                x.id === row.id ? { ...row, status: x.status } : x,
+                x.id === row.id
+                  ? { ...row, status: x.status, cancelledAt: x.cancelledAt }
+                  : x,
               );
       } else if (action === "toggleColdSale")
         next.sales = prev.sales.map((x) =>
-          x.id === data.id ? { ...x, status: String(data.status) } : x,
+          x.id === data.id
+            ? {
+                ...x,
+                status: String(data.status),
+                cancelledAt:
+                  data.status === "cancelled" ? new Date().toISOString() : null,
+              }
+            : x,
         );
       else if (action === "addColdExpense" || action === "editColdExpense") {
         const row: ColdExpense = {
@@ -1337,6 +1368,7 @@ export default function Home() {
             buyPrice: Number(data.buyPrice),
             dateTime: iso(),
             status: "active",
+            cancelledAt: null,
             isPaid: data.isPaid !== "false",
           },
           ...prev.purchases,
@@ -1358,7 +1390,14 @@ export default function Home() {
         );
       else if (action === "togglePurchase")
         next.purchases = prev.purchases.map((x) =>
-          x.id === data.id ? { ...x, status: String(data.status) } : x,
+          x.id === data.id
+            ? {
+                ...x,
+                status: String(data.status),
+                cancelledAt:
+                  data.status === "cancelled" ? new Date().toISOString() : null,
+              }
+            : x,
         );
       else if (action === "addSale")
         next.sales = [
@@ -1372,6 +1411,7 @@ export default function Home() {
             sellPrice: Number(data.sellPrice),
             dateTime: iso(),
             status: "active",
+            cancelledAt: null,
             createdBy: session?.user.id,
           },
           ...prev.sales,
@@ -1393,7 +1433,14 @@ export default function Home() {
         );
       else if (action === "toggleSale")
         next.sales = prev.sales.map((x) =>
-          x.id === data.id ? { ...x, status: String(data.status) } : x,
+          x.id === data.id
+            ? {
+                ...x,
+                status: String(data.status),
+                cancelledAt:
+                  data.status === "cancelled" ? new Date().toISOString() : null,
+              }
+            : x,
         );
       else if (action === "archiveProduct")
         next.products = prev.products.map((x) =>
@@ -1636,6 +1683,13 @@ export default function Home() {
       setSyncNotice("Bulutla senkronize edildi.");
     } catch (e) {
       const message = e instanceof Error ? e.message : "İşlem tamamlanamadı.";
+      if (isPermanentCancellationError(e)) {
+        await reload();
+        const permanentMessage =
+          "Bu kaydın 7 günlük geri alma süresi dolmuş ve kayıt kalıcı silme sürecine alınmış.";
+        setError(permanentMessage);
+        throw new Error(permanentMessage);
+      }
       if (
         OFFLINE_ACTIONS.has(action) &&
         (/fetch|network|internet/i.test(message) || !navigator.onLine)
@@ -1671,13 +1725,22 @@ export default function Home() {
     let remaining = [...items];
     try {
       for (const item of items) {
-        await executeMutation(item.action, item.data);
+        try {
+          await executeMutation(item.action, item.data);
+        } catch (error) {
+          if (!isPermanentCancellationError(error)) throw error;
+          // A compact server-side audit tombstone proves that this id was
+          // already purged or its restore window expired. Discard the stale
+          // offline operation so it cannot recreate the deleted record.
+        }
         remaining = remaining.filter((x) => x.id !== item.id);
         saveQueue(userId, remaining);
         setPendingCount(remaining.length);
       }
       await reload();
-      setSyncNotice("Bekleyen kayıtlar buluta gönderildi.");
+      setSyncNotice(
+        "Bekleyen kayıtlar işlendi; süresi dolmuş eski işlemler yeniden oluşturulmadı.",
+      );
     } catch {
       setSyncNotice("Bazı kayıtlar hâlâ cihazda bekliyor.");
     } finally {
@@ -2079,8 +2142,12 @@ export default function Home() {
     setDialog("unlockFinance");
   }
   function openActivityTarget(row: ActivityLog) {
-    if (row.action_type === "delete") {
-      window.alert("Bu kayıt daha sonra silinmiş. İşlem özeti geçmişte korunuyor.");
+    if (row.action_type === "delete" || row.action_type === "auto_delete") {
+      window.alert(
+        row.action_type === "auto_delete"
+          ? "Bu kayıt 7 günlük iptal süresi sonunda kalıcı olarak silinmiş. Küçük işlem özeti geçmişte korunuyor."
+          : "Bu kayıt daha sonra silinmiş. İşlem özeti geçmişte korunuyor.",
+      );
       return;
     }
     if (row.entity_type === "purchases") {
@@ -3208,7 +3275,12 @@ function PurchaseTable({
                 </span>
               </TableCell>
               <TableCell>
-                {r.status === "cancelled" ? "İptal" : "Aktif"}
+                <div className="gurminik-cancellation-state">
+                  <span>{r.status === "cancelled" ? "İptal" : "Aktif"}</span>
+                  {r.status === "cancelled" && (
+                    <small>{cancellationNotice(r.cancelledAt)}</small>
+                  )}
+                </div>
               </TableCell>
               {hasActions && (
                 <TableCell>
@@ -3227,6 +3299,10 @@ function PurchaseTable({
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={
+                          r.status === "cancelled" &&
+                          cancellationExpired(r.cancelledAt)
+                        }
                         onClick={() =>
                           mutate!("togglePurchase", {
                             id: r.id,
@@ -3235,7 +3311,7 @@ function PurchaseTable({
                           })
                         }
                       >
-                        {r.status === "cancelled" ? "Geri al" : "İptal et"}
+                        {r.status === "cancelled" ? "Etkinleştir" : "İptal et"}
                       </Button>
                     )}
                   </div>
@@ -3434,7 +3510,12 @@ function SaleTable({
               </TableCell>
               <TableCell>{dateTime(r.dateTime)}</TableCell>
               <TableCell>
-                {r.status === "cancelled" ? "İptal" : "Aktif"}
+                <div className="gurminik-cancellation-state">
+                  <span>{r.status === "cancelled" ? "İptal" : "Aktif"}</span>
+                  {r.status === "cancelled" && (
+                    <small>{cancellationNotice(r.cancelledAt)}</small>
+                  )}
+                </div>
               </TableCell>
               {hasActions && (
                 <TableCell>
@@ -3453,6 +3534,10 @@ function SaleTable({
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={
+                          r.status === "cancelled" &&
+                          cancellationExpired(r.cancelledAt)
+                        }
                         onClick={() =>
                           mutate!("toggleSale", {
                             id: r.id,
@@ -3461,7 +3546,7 @@ function SaleTable({
                           })
                         }
                       >
-                        {r.status === "cancelled" ? "Geri al" : "İptal et"}
+                        {r.status === "cancelled" ? "Etkinleştir" : "İptal et"}
                       </Button>
                     )}
                   </div>

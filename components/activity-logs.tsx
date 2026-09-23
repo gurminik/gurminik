@@ -37,11 +37,13 @@ export function ActivityLogs({
   onOpen,
   financeUnlocked,
   requestFinanceUnlock,
+  compact = false,
 }: {
   userId: string;
   onOpen: (row: ActivityLog) => void;
   financeUnlocked: boolean;
   requestFinanceUnlock: () => void;
+  compact?: boolean;
 }) {
   const { range, setRange } = useRememberedDateRange(userId, "activity_logs");
   const [rows, setRows] = useState<ActivityLog[]>([]), [page, setPage] = useState(1);
@@ -50,13 +52,15 @@ export function ActivityLogs({
 
   const queryBase = useCallback(() => {
     let query = supabase.from("activity_logs").select(
-      "id,actor_name,module,action_type,entity_type,entity_id,person_name,product_name,quantity,amount,description,metadata,created_at",
+      compact
+        ? "id,actor_name,module,action_type,entity_type,entity_id,person_name,product_name,quantity,description,created_at"
+        : "id,actor_name,module,action_type,entity_type,entity_id,person_name,product_name,quantity,amount,description,metadata,created_at",
       { count: "exact" },
     );
     if (range.start) query = query.gte("created_at", isoStart(range.start));
     if (range.end) query = query.lte("created_at", isoEnd(range.end));
     return query;
-  }, [range.end, range.start]);
+  }, [compact, range.end, range.start]);
 
   const load = useCallback(async () => {
     setLoading(true); setMessage("");
@@ -122,11 +126,11 @@ export function ActivityLogs({
         {presets.map(([label, start, end]) => <button key={label} onClick={() => setRange({ start: localDate(start), end: localDate(end) })}>{label}</button>)}
         <button onClick={() => setRange({ start: "", end: "" })}>Tüm Zamanlar</button>
       </div>
-      <Button onClick={() => void pdf()} disabled={loading}><Download />PDF Olarak İndir</Button>
+      {!compact && <Button onClick={() => void pdf()} disabled={loading}><Download />PDF Olarak İndir</Button>}
     </div>
     {message && <div className="gurminik-permission-error">{message}</div>}
     <section className="gurminik-panel gurminik-activity-panel">
-      <header><div><p>DENETİM KAYITLARI</p><h3>{total.toLocaleString("tr-TR")} önemli işlem</h3></div>{loading && <RefreshCw className="animate-spin" />}</header>
+      <header><div><p>{compact ? "KENDİ İŞLEMLERİM" : "DENETİM KAYITLARI"}</p><h3>{total.toLocaleString("tr-TR")} önemli işlem</h3></div>{loading && <RefreshCw className="animate-spin" />}</header>
       <div className="gurminik-activity-table">
         <div className="gurminik-activity-row is-header"><span>Tarih / Saat</span><span>Kullanıcı</span><span>İşlem</span><span>Kişi</span><span>Ürün / Açıklama</span><span>Aç</span></div>
         {rows.map(row => <div className="gurminik-activity-row" key={row.id}>
@@ -148,9 +152,9 @@ export function ActivityLogs({
           <p><b>Kullanıcı</b><span>{selected.actor_name}</span></p><p><b>İşlem</b><span>{actionLabels[selected.action_type] || selected.action_type}</span></p>
           <p><b>Kişi</b><span>{selected.person_name || "—"}</span></p><p><b>Ürün</b><span>{selected.product_name || "—"}</span></p>
           <p><b>Miktar</b><span>{selected.quantity ? `${Number(selected.quantity).toLocaleString("tr-TR")} kg` : "—"}</span></p>
-          <p><b>Tutar</b><span>{selected.amount == null ? "—" : financeUnlocked ? Number(selected.amount).toLocaleString("tr-TR",{style:"currency",currency:"TRY"}) : <button onClick={requestFinanceUnlock}>Şifreyle göster</button>}</span></p>
+          {!compact && <p><b>Tutar</b><span>{selected.amount == null ? "—" : financeUnlocked ? Number(selected.amount).toLocaleString("tr-TR",{style:"currency",currency:"TRY"}) : <button onClick={requestFinanceUnlock}>Şifreyle göster</button>}</span></p>}
           <div><b>Açıklama</b><span>{selected.description}</span></div>
-          {selected.metadata && Object.keys(selected.metadata).length > 0 && <div><b>Eski / yeni değerler</b>{financeUnlocked ? <pre>{JSON.stringify(selected.metadata,null,2)}</pre> : <button onClick={requestFinanceUnlock}>Ayrıntıları şifreyle göster</button>}</div>}
+          {!compact && selected.metadata && Object.keys(selected.metadata).length > 0 && <div><b>Eski / yeni değerler</b>{financeUnlocked ? <pre>{JSON.stringify(selected.metadata,null,2)}</pre> : <button onClick={requestFinanceUnlock}>Ayrıntıları şifreyle göster</button>}</div>}
           <div><Button onClick={() => { onOpen(selected); setSelected(null); }}><Eye />İlgili kayda git</Button></div>
         </div>}
       </DialogContent>

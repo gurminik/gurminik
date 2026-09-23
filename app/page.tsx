@@ -242,6 +242,10 @@ type AccessState = {
   display_name?: string | null;
   role: "admin" | "user";
   is_active: boolean;
+  mobile_mode: boolean;
+  full_access: boolean;
+  activity_scope_all: boolean;
+  effective_mobile_mode: boolean;
   permissions: Partial<Record<ModuleId, Permission>>;
 };
 type AdminUser = AccessState & { id: string; created_at: string };
@@ -319,7 +323,8 @@ const DEFAULT_CONTACT_CATEGORIES = [
   "Diğer",
 ];
 const QUEUE_KEY = "gurminik_pending_operations_v1",
-  STATE_CACHE_KEY = "gurminik_state_cache_v1";
+  STATE_CACHE_KEY = "gurminik_state_cache_v1",
+  MOBILE_STATE_CACHE_KEY = "gurminik_mobile_state_cache_v1";
 const OFFLINE_ACTIONS = new Set([
   "addProduct",
   "addPurchase",
@@ -398,6 +403,10 @@ const NO_ACCESS: AccessState = {
   user_id: "",
   role: "user",
   is_active: false,
+  mobile_mode: false,
+  full_access: false,
+  activity_scope_all: false,
+  effective_mobile_mode: false,
   permissions: {},
 };
 const FULL_PERMISSION: Permission = {
@@ -681,6 +690,151 @@ export default function Home() {
       })),
     } satisfies State;
   }, []);
+  const fetchMobileState = useCallback(
+    async (
+      permissions: Partial<Record<ModuleId, Permission>>,
+    ): Promise<State> => {
+      type MobileQueryResult = {
+        data: Record<string, unknown>[];
+        error: { message?: string } | null;
+      };
+      const maybe = async (
+        allowed: boolean,
+        query: PromiseLike<unknown>,
+      ): Promise<MobileQueryResult> =>
+        allowed
+          ? ((await query) as MobileQueryResult)
+          : { data: [], error: null };
+      const purchaseAccess = Boolean(
+          permissions.purchases?.can_create || permissions.purchases?.can_view,
+        ),
+        saleAccess = Boolean(
+          permissions.sales?.can_create || permissions.sales?.can_view,
+        ),
+        expenseAccess = Boolean(
+          permissions.expenses?.can_create || permissions.expenses?.can_view,
+        ),
+        contactAccess = Boolean(permissions.contacts?.can_view),
+        favoriteAccess = Boolean(permissions.favorites?.can_view),
+        productAccess = purchaseAccess || saleAccess || favoriteAccess;
+
+      const [products, purchases, sales, categories, contactCategories, contacts, favorites] =
+        await Promise.all([
+          maybe(
+            productAccess,
+            supabase
+              .from("products")
+              .select("id,name,icon,is_active,created_at")
+              .order("created_at")
+              .limit(1000),
+          ),
+          maybe(
+            purchaseAccess,
+            supabase
+              .from("purchases")
+              .select(
+                "id,product_id,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,status,cancelled_at,is_paid,created_at",
+              )
+              .order("transaction_at", { ascending: false })
+              .limit(100),
+          ),
+          maybe(
+            saleAccess,
+            supabase
+              .from("sales")
+              .select(
+                "id,product_id,buyer_name,driver_name,vehicle_plate,quantity_kg,unit_sale_price,transaction_at,status,cancelled_at,created_by,created_at",
+              )
+              .order("transaction_at", { ascending: false })
+              .limit(100),
+          ),
+          maybe(
+            expenseAccess,
+            supabase
+              .from("expense_categories")
+              .select("id,name,created_at")
+              .order("name")
+              .limit(1000),
+          ),
+          maybe(
+            contactAccess,
+            supabase
+              .from("contact_categories")
+              .select("id,name,created_at")
+              .order("name")
+              .limit(1000),
+          ),
+          maybe(
+            contactAccess,
+            fetchAllRows((from, to) =>
+              supabase
+                .from("contacts")
+                .select("id,name,phone,contact_type,notes,created_at")
+                .order("name")
+                .order("id")
+                .range(from, to),
+            ),
+          ),
+          maybe(
+            favoriteAccess,
+            supabase
+              .from("favorites")
+              .select(
+                "id,person_name,phone,vehicle_plate,last_product_id,last_buy_price,notes,created_at",
+              )
+              .order("updated_at", { ascending: false })
+              .limit(1000),
+          ),
+        ]);
+      const failed = [products, purchases, sales, categories, contactCategories, contacts, favorites].find(
+        (result) => result.error,
+      );
+      if (failed?.error) throw new Error(failed.error.message || "Mobil veriler yüklenemedi.");
+
+      return {
+        products: products.data.map((x) => ({
+          id: String(x.id), name: String(x.name), icon: String(x.icon || "●"),
+          isActive: x.is_active !== false, createdAt: String(x.created_at || ""),
+        })),
+        purchases: purchases.data.map((x) => ({
+          id: String(x.id), productId: String(x.product_id), person: String(x.supplier_name),
+          plate: String(x.vehicle_plate || ""), kg: Number(x.quantity_kg),
+          buyPrice: Number(x.unit_buy_price), dateTime: String(x.transaction_at),
+          status: String(x.status || "active"), cancelledAt: x.cancelled_at ? String(x.cancelled_at) : null,
+          isPaid: x.is_paid !== false, createdAt: String(x.created_at || ""),
+        })),
+        sales: sales.data.map((x) => ({
+          id: String(x.id), productId: String(x.product_id), buyer: String(x.buyer_name || "Alıcı"),
+          driver: String(x.driver_name || ""), plate: String(x.vehicle_plate || ""),
+          kg: Number(x.quantity_kg), sellPrice: Number(x.unit_sale_price),
+          dateTime: String(x.transaction_at), status: String(x.status || "active"),
+          cancelledAt: x.cancelled_at ? String(x.cancelled_at) : null,
+          createdBy: x.created_by ? String(x.created_by) : undefined,
+          createdAt: String(x.created_at || ""),
+        })),
+        expenses: [],
+        categories: categories.data.map((x) => ({
+          id: String(x.id), name: String(x.name), createdAt: String(x.created_at || ""),
+        })),
+        contactCategories: contactCategories.data.map((x) => ({
+          id: String(x.id), name: String(x.name), createdAt: String(x.created_at || ""),
+        })),
+        contacts: contacts.data.map((x) => ({
+          id: String(x.id), name: String(x.name), phone: String(x.phone || ""),
+          category: String(x.contact_type || "Diğer"), note: String(x.notes || ""),
+          createdAt: String(x.created_at || ""),
+        })),
+        accountPayments: [],
+        favorites: favorites.data.map((x) => ({
+          id: String(x.id), person: String(x.person_name), phone: String(x.phone || ""),
+          plate: String(x.vehicle_plate || ""), lastProductId: String(x.last_product_id || ""),
+          lastBuyPrice: x.last_buy_price == null ? null : Number(x.last_buy_price),
+          notes: String(x.notes || ""), createdAt: String(x.created_at || ""),
+        })),
+      };
+    },
+    [],
+  );
   const fetchCold = useCallback(async (): Promise<ColdState> => {
     const [p, s, e, c, cp] = await Promise.all([
       fetchAllRows((from, to) =>
@@ -770,7 +924,13 @@ export default function Home() {
     };
   }, []);
   const load = useCallback(
-    async (asAdmin = false, userId = "", coldAllowed = false) => {
+    async (
+      asAdmin = false,
+      userId = "",
+      coldAllowed = false,
+      mobileWorker = false,
+      permissions: Partial<Record<ModuleId, Permission>> = {},
+    ) => {
       setLoading(true);
       setError("");
       try {
@@ -778,7 +938,9 @@ export default function Home() {
           const claimed = await supabase.rpc("claim_gurminik_import");
           if (claimed.error) throw claimed.error;
         }
-        let next = await fetchState();
+        let next = mobileWorker
+          ? await fetchMobileState(permissions)
+          : await fetchState();
         if (asAdmin && !next.products.length) {
           const inserted = await supabase
             .from("products")
@@ -808,7 +970,7 @@ export default function Home() {
         if (userId)
           try {
             localStorage.setItem(
-              `${STATE_CACHE_KEY}:${userId}`,
+              `${mobileWorker ? MOBILE_STATE_CACHE_KEY : STATE_CACHE_KEY}:${userId}`,
               JSON.stringify(next),
             );
           } catch {
@@ -816,7 +978,7 @@ export default function Home() {
               "Cihaz önbelleği dolu; bulut kayıtları açık, çevrimdışı görüntüleme sınırlı.",
             );
           }
-        if (coldAllowed || asAdmin) {
+        if (!mobileWorker && (coldAllowed || asAdmin)) {
           const coldNext = await fetchCold();
           setCold(coldNext);
           if (userId)
@@ -835,12 +997,14 @@ export default function Home() {
         try {
           const cached = userId
             ? JSON.parse(
-                localStorage.getItem(`${STATE_CACHE_KEY}:${userId}`) || "",
+                localStorage.getItem(
+                  `${mobileWorker ? MOBILE_STATE_CACHE_KEY : STATE_CACHE_KEY}:${userId}`,
+                ) || "",
               )
             : null;
           if (cached?.products) {
             setState({ ...EMPTY, ...cached });
-            if (coldAllowed || asAdmin) {
+            if (!mobileWorker && (coldAllowed || asAdmin)) {
               const coldCached = JSON.parse(
                 localStorage.getItem(`${STATE_CACHE_KEY}:${userId}:cold`) ||
                   "null",
@@ -860,7 +1024,7 @@ export default function Home() {
         setLoading(false);
       }
     },
-    [fetchState, fetchCold],
+    [fetchState, fetchMobileState, fetchCold],
   );
   const reload = useCallback(
     () =>
@@ -868,10 +1032,13 @@ export default function Home() {
         access.role === "admin",
         session?.user.id || "",
         access.permissions.cold_storage?.can_view || false,
+        access.effective_mobile_mode,
+        access.permissions,
       ),
     [
       access.role,
-      access.permissions.cold_storage?.can_view,
+      access.effective_mobile_mode,
+      access.permissions,
       load,
       session?.user.id,
     ],
@@ -894,12 +1061,18 @@ export default function Home() {
           if (
             nextAccess.is_active &&
             (nextAccess.role === "admin" ||
-              MODULE_IDS.some((id) => nextAccess.permissions[id]?.can_view))
+              MODULE_IDS.some(
+                (id) =>
+                  nextAccess.permissions[id]?.can_view ||
+                  nextAccess.permissions[id]?.can_create,
+              ))
           )
             await load(
               nextAccess.role === "admin",
               next.user.id,
               nextAccess.permissions.cold_storage?.can_view || false,
+              nextAccess.effective_mobile_mode,
+              nextAccess.permissions,
             );
           else {
             setState(EMPTY);
@@ -1532,7 +1705,7 @@ export default function Home() {
       if (session?.user.id)
         try {
           localStorage.setItem(
-            `${STATE_CACHE_KEY}:${session.user.id}`,
+            `${access.effective_mobile_mode ? MOBILE_STATE_CACHE_KEY : STATE_CACHE_KEY}:${session.user.id}`,
             JSON.stringify(next),
           );
         } catch {
@@ -1776,13 +1949,19 @@ export default function Home() {
         setAccess(next);
         const permitted =
           next.role === "admin" ||
-          MODULE_IDS.some((id) => next.permissions[id]?.can_view);
+          MODULE_IDS.some(
+            (id) =>
+              next.permissions[id]?.can_view ||
+              next.permissions[id]?.can_create,
+          );
         if (!permitted) {
           setState(EMPTY);
           setCold(EMPTY_COLD);
           return;
         }
-        if (
+        if (next.effective_mobile_mode) {
+          setView("dashboard");
+        } else if (
           view !== "authorization" &&
           next.role !== "admin" &&
           !next.permissions[view as ModuleId]?.can_view
@@ -1796,6 +1975,8 @@ export default function Home() {
           next.role === "admin",
           session.user.id,
           next.permissions.cold_storage?.can_view || false,
+          next.effective_mobile_mode,
+          next.permissions,
         );
       } catch {
         setError("Yetkiler yenilenemedi.");
@@ -2142,6 +2323,17 @@ export default function Home() {
     setDialog("unlockFinance");
   }
   function openActivityTarget(row: ActivityLog) {
+    const targetModule = row.module as ModuleId;
+    if (
+      access.effective_mobile_mode &&
+      MODULE_IDS.includes(targetModule) &&
+      !permissionFor(targetModule).can_view
+    ) {
+      window.alert(
+        "Bu kaydı açmak için ilgili modülde görüntüleme yetkiniz bulunmuyor.",
+      );
+      return;
+    }
     if (row.action_type === "delete" || row.action_type === "auto_delete") {
       window.alert(
         row.action_type === "auto_delete"
@@ -2152,11 +2344,21 @@ export default function Home() {
     }
     if (row.entity_type === "purchases") {
       const record = state.purchases.find((x) => x.id === row.entity_id);
-      if (!record) return void window.alert("Bu kayıt daha sonra silinmiş.");
+      if (!record)
+        return void window.alert(
+          access.effective_mobile_mode
+            ? "Kayıt sade mobil görünümde yüklü değil veya daha sonra silinmiş."
+            : "Bu kayıt daha sonra silinmiş.",
+        );
       setSelectedPurchase(record); setSelectedProduct(record.productId); setDialog("editPurchase");
     } else if (row.entity_type === "sales") {
       const record = state.sales.find((x) => x.id === row.entity_id);
-      if (!record) return void window.alert("Bu kayıt daha sonra silinmiş.");
+      if (!record)
+        return void window.alert(
+          access.effective_mobile_mode
+            ? "Kayıt sade mobil görünümde yüklü değil veya daha sonra silinmiş."
+            : "Bu kayıt daha sonra silinmiş.",
+        );
       setSelectedSale(record); setSelectedProduct(record.productId); setDialog("editSale");
     } else if (row.module === "expenses") setView("expenses");
     else if (row.module === "accounts") setView("accounts");
@@ -2172,6 +2374,7 @@ export default function Home() {
     if (!userId) return;
     localStorage.removeItem(queueKey(userId));
     localStorage.removeItem(`${STATE_CACHE_KEY}:${userId}`);
+    localStorage.removeItem(`${MOBILE_STATE_CACHE_KEY}:${userId}`);
     localStorage.removeItem(`${STATE_CACHE_KEY}:${userId}:cold`);
     const epoch = String(result.epoch || "");
     if (epoch) {
@@ -2188,6 +2391,170 @@ export default function Home() {
     }
     setPendingCount(0); setState(EMPTY); setCold(EMPTY_COLD); setView("dashboard");
     setSyncNotice("Uygulama başarıyla sıfırlandı. Yeni sezon kayıtlarına başlayabilirsiniz.");
+  }
+
+  if (access.effective_mobile_mode && access.is_active) {
+    const activeProduct = state.products.find((product) => product.isActive !== false);
+    const openMobileEntry = (type: "purchase" | "sale") => {
+      if (!activeProduct) {
+        window.alert("Kayıt girebilmek için yöneticinin önce aktif bir ürün oluşturması gerekiyor.");
+        return;
+      }
+      if (type === "purchase") openPurchase(activeProduct.id);
+      else openSale(activeProduct.id);
+    };
+    const mobileActions = [
+      permissionFor("purchases").can_create && {
+        id: "purchase", label: "Alış Gir", icon: Boxes,
+        run: () => openMobileEntry("purchase"),
+      },
+      permissionFor("sales").can_create && {
+        id: "sale", label: "Satış Gir", icon: ShoppingCart,
+        run: () => openMobileEntry("sale"),
+      },
+      canView("favorites") && {
+        id: "favorites", label: "Favoriler", icon: Star,
+        run: () => setView("favorites"),
+      },
+      permissionFor("expenses").can_create && {
+        id: "expense", label: "Gider Gir", icon: ReceiptText,
+        run: () => setDialog("expense"),
+      },
+      canView("contacts") && {
+        id: "contacts", label: "Telefon Numaraları", icon: Phone,
+        run: () => setView("contacts"),
+      },
+      canView("activity_logs") && {
+        id: "activity_logs", label: "İşlem Geçmişi", icon: History,
+        run: () => setView("activity_logs"),
+      },
+    ].filter(Boolean) as Array<{
+      id: string;
+      label: string;
+      icon: typeof Boxes;
+      run: () => void;
+    }>;
+    const closeMobileDialog = () => {
+      setDialog(null);
+      setSelectedPurchase(null);
+      setSelectedSale(null);
+    };
+
+    return (
+      <div className="gurminik-worker-shell">
+        <header className="gurminik-worker-header">
+          {view !== "dashboard" ? (
+            <button onClick={() => setView("dashboard")} aria-label="Ana ekrana dön">
+              <ChevronLeft />
+            </button>
+          ) : <span className="gurminik-worker-header-spacer" />}
+          <div>
+            <strong>GURMİNİK</strong>
+            <small>{access.display_name || access.email || session.user.email}</small>
+          </div>
+          <button
+            className={online ? "is-online" : "is-offline"}
+            onClick={() => void flushQueue()}
+            disabled={syncing}
+            aria-label="Senkronizasyon durumu"
+          >
+            {online ? <Cloud /> : <WifiOff />}
+            {pendingCount > 0 && <i>{pendingCount}</i>}
+          </button>
+        </header>
+        <main className="gurminik-worker-main">
+          {error && <div className="gurminik-permission-error">{error}</div>}
+          {loading && <div className="gurminik-worker-notice">Kayıtlar yükleniyor…</div>}
+          {syncNotice && (
+            <div className="gurminik-sync-notice">
+              {syncNotice}<button onClick={() => setSyncNotice("")}><X /></button>
+            </div>
+          )}
+          {view === "dashboard" && (
+            <>
+              <section className="gurminik-worker-welcome">
+                <p>HIZLI İŞLEM</p>
+                <h1>Ne yapmak istiyorsunuz?</h1>
+              </section>
+              <section className="gurminik-worker-grid" aria-label="Hızlı işlemler">
+                {mobileActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <button key={action.id} onClick={action.run}>
+                      <Icon /><span>{action.label}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  className="is-logout"
+                  onClick={() => {
+                    if (window.confirm("Hesabınızdan çıkış yapmak istiyor musunuz?"))
+                      void supabase.auth.signOut();
+                  }}
+                >
+                  <LogOut /><span>Çıkış Yap</span>
+                </button>
+              </section>
+            </>
+          )}
+          {view === "favorites" && canView("favorites") && (
+            <Favorites
+              state={state}
+              userId={session.user.id}
+              mutate={mutate}
+              permission={permissionFor("favorites")}
+              purchasePermission={permissionFor("purchases")}
+              compactMobile
+            />
+          )}
+          {view === "contacts" && canView("contacts") && (
+            <Contacts
+              state={state}
+              search={contactSearch}
+              setSearch={(value) => { setContactSearch(value); setContactPage(1); }}
+              page={contactPage}
+              setPage={setContactPage}
+              mutate={mutate}
+              importContacts={importVCardContacts}
+              permission={permissionFor("contacts")}
+            />
+          )}
+          {view === "activity_logs" && canView("activity_logs") && (
+            <ActivityLogs
+              userId={session.user.id}
+              onOpen={openActivityTarget}
+              financeUnlocked={false}
+              requestFinanceUnlock={() => undefined}
+              compact
+            />
+          )}
+        </main>
+        <EntryDialog
+          type={dialog}
+          close={closeMobileDialog}
+          state={state}
+          productId={selectedProduct}
+          productName={productName}
+          mutate={mutate}
+          selectedPurchase={selectedPurchase}
+          selectedSale={selectedSale}
+          accountEmail={session.user.email || email}
+          userId={session.user.id}
+          financeUnlocked={false}
+          unlockFinance={unlockFinance}
+          onSaved={(action) => {
+            setSyncNotice(
+              action === "addPurchase"
+                ? "Alış kaydı başarıyla oluşturuldu."
+                : action === "addSale"
+                  ? "Satış kaydı başarıyla oluşturuldu."
+                  : "Gider başarıyla kaydedildi.",
+            );
+            setView("dashboard");
+          }}
+        />
+      </div>
+    );
   }
 
   return (
@@ -2623,6 +2990,21 @@ function AuthorizationPanel({
       [userId]: { ...prev[userId], is_active: value },
     }));
   }
+  function updateUserMode(
+    userId: string,
+    field: "mobile_mode" | "full_access" | "activity_scope_all",
+    value: boolean,
+  ) {
+    setDrafts((prev) => ({
+      ...prev,
+      [userId]: {
+        ...prev[userId],
+        [field]: value,
+        ...(field === "full_access" && value ? { mobile_mode: false } : {}),
+        ...(field === "mobile_mode" && value ? { full_access: false } : {}),
+      },
+    }));
+  }
   function updatePermission(
     userId: string,
     module: ModuleId,
@@ -2667,10 +3049,13 @@ function AuthorizationPanel({
           },
         ]),
       );
-      const { error } = await supabase.rpc("admin_set_gurminik_user_access", {
+      const { error } = await supabase.rpc("admin_set_gurminik_user_access_v2", {
         target_user_id: userId,
         active: user.is_active,
         permission_set,
+        mobile_enabled: user.mobile_mode,
+        full_enabled: user.full_access,
+        activity_all: user.activity_scope_all,
       });
       if (error) throw error;
       await loadUsers();
@@ -2821,6 +3206,60 @@ function AuthorizationPanel({
                     />
                     <span>Hesap aktif</span>
                   </label>
+                  <div className="gurminik-user-mode-options">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={draft.mobile_mode}
+                        onChange={(e) =>
+                          updateUserMode(
+                            user.id,
+                            "mobile_mode",
+                            e.target.checked,
+                          )
+                        }
+                      />
+                      <span>
+                        <strong>Mobil İçin Yetkilendir</strong>
+                        Sade ve hızlı çalışan ekranını açar.
+                      </span>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={draft.full_access}
+                        onChange={(e) =>
+                          updateUserMode(
+                            user.id,
+                            "full_access",
+                            e.target.checked,
+                          )
+                        }
+                      />
+                      <span>
+                        <strong>Tam Yetki</strong>
+                        Mobil kısıtlamasını kaldırır ve tüm modülleri açar.
+                      </span>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={draft.activity_scope_all}
+                        disabled={!draft.permissions.activity_logs?.can_view}
+                        onChange={(e) =>
+                          updateUserMode(
+                            user.id,
+                            "activity_scope_all",
+                            e.target.checked,
+                          )
+                        }
+                      />
+                      <span>
+                        <strong>Tüm işlem geçmişini gör</strong>
+                        Kapalıysa mobil çalışan yalnızca kendi işlemlerini görür.
+                      </span>
+                    </label>
+                  </div>
                   <div className="gurminik-permission-table">
                     <div className="gurminik-permission-row is-header">
                       <strong>Modül</strong>
@@ -4216,12 +4655,14 @@ function Favorites({
   mutate,
   permission,
   purchasePermission,
+  compactMobile = false,
 }: {
   state: State;
   userId: string;
   mutate: (a: string, d: Record<string, unknown>) => Promise<void>;
   permission: Permission;
   purchasePermission: Permission;
+  compactMobile?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string>(""),
     [message, setMessage] = useState(""),
@@ -4269,16 +4710,16 @@ function Favorites({
     state.favorites.find((item) => item.id === selectedId) || null;
   return (
     <div className="grid gap-5">
-      <section className="gurminik-panel gurminik-favorites-header">
+      <section className={`gurminik-panel gurminik-favorites-header ${compactMobile ? "is-compact" : ""}`}>
         <div>
           <p className="gurminik-eyebrow">HIZLI ALIŞ</p>
           <h3>Favori tedarikçiler</h3>
-          <span>
+          {!compactMobile && <span>
             Kişiyi seçin; son ürün, plaka ve fiyat hazır gelsin. Alanların
             tamamını kaydetmeden önce değiştirebilirsiniz.
-          </span>
+          </span>}
         </div>
-        <Stat label="Favori kişi" value={state.favorites.length} />
+        {!compactMobile && <Stat label="Favori kişi" value={state.favorites.length} />}
       </section>
       <div className="gurminik-panel cold-search">
         <Input
@@ -4287,7 +4728,7 @@ function Favorites({
           onChange={(e) => setSearch(e.target.value)}
           placeholder="İsim veya telefon ara…"
         />
-        <select
+        {!compactMobile && <select
           aria-label="Favorileri sırala"
           value={sort}
           onChange={(e) => {
@@ -4299,7 +4740,7 @@ function Favorites({
           <option value="weight">En Çok Ürün Getiren</option>
           <option value="recent">En Son Ürün Getiren</option>
           <option value="name">İsim A-Z</option>
-        </select>
+        </select>}
       </div>
       {message && <div className="gurminik-import-result">{message}</div>}
       <div className="gurminik-favorite-grid">
@@ -4331,11 +4772,11 @@ function Favorites({
                     : money(item.lastBuyPrice) + "/kg"}
                 </small>
                 <span>{item.plate || "Plaka yok"}</span>
-                <small>
+                {!compactMobile && <small>
                   {stats
                     ? `${kg(stats.total)} · Son geliş: ${new Date(stats.last).toLocaleDateString("tr-TR")}`
                     : "Henüz aktif alış yok"}
-                </small>
+                </small>}
               </button>
               <div className="gurminik-favorite-actions">
                 {item.phone && (
@@ -6347,6 +6788,7 @@ function EntryDialog({
   userId,
   financeUnlocked,
   unlockFinance,
+  onSaved,
 }: {
   type: DialogType;
   close: () => void;
@@ -6360,6 +6802,7 @@ function EntryDialog({
   userId: string;
   financeUnlocked: boolean;
   unlockFinance: (password: string) => Promise<boolean>;
+  onSaved?: (action: string) => void;
 }) {
   const [dialogError, setDialogError] = useState(""),
     [detailUnlocking, setDetailUnlocking] = useState(false),
@@ -6383,6 +6826,7 @@ function EntryDialog({
       data.productId = productId;
     try {
       await mutate(action, data);
+      onSaved?.(action);
       close();
     } catch (error) {
       setDialogError(

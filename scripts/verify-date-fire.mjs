@@ -106,6 +106,31 @@ assert.equal(summary.profitPerKg, 5.625);
 
 const all = coldSummary(state, bounds.start, bounds.end);
 assert.equal(all.fireKg, 550);
+
+const costState = {
+  products: [{id:"cp1",name:"Limon",isActive:true},{id:"cp2",name:"Nar",isActive:true}],
+  categories: [],
+  purchases: [
+    {id:"p1",productId:"cp1",product:"Limon",person:"M",plate:"",kg:10000,price:10,dateTime:"2026-09-01T08:00:00",note:"",status:"active"},
+    {id:"p2",productId:"cp2",product:"Nar",person:"A",plate:"",kg:5000,price:20,dateTime:"2026-09-01T09:00:00",note:"",status:"active"},
+  ],
+  sales: [
+    {id:"s1",productId:"cp1",product:"Limon",buyer:"G",kg:8000,price:18,dateTime:"2026-09-10T08:00:00",note:"",status:"active"},
+    {id:"s2",productId:"cp2",product:"Nar",buyer:"G",kg:2000,price:30,dateTime:"2026-09-10T09:00:00",note:"",status:"active"},
+  ],
+  expenses: [
+    {id:"e1",productId:"cp1",title:"Nakliye",category:"Nakliye",amount:8000,product:"Limon",lossKg:0,scope:"purchase",dateTime:"2026-09-02T08:00:00",note:""},
+    {id:"e2",productId:"cp1",title:"Sevkiyat",category:"Nakliye",amount:4000,product:"Limon",lossKg:0,scope:"sale",dateTime:"2026-09-11T08:00:00",note:""},
+    {id:"e3",productId:"",title:"Elektrik",category:"Elektrik",amount:5000,product:"",lossKg:0,scope:"general",dateTime:"2026-09-15T08:00:00",note:""},
+  ],
+};
+const lemonCost=coldSummary(costState,bounds.start,bounds.end,"Limon");
+const pomegranateCost=coldSummary(costState,bounds.start,bounds.end,"Nar");
+const totalCost=coldSummary(costState,bounds.start,bounds.end);
+assert.equal(lemonCost.realAverageBuy,10.8);
+assert.equal(lemonCost.saleExpensePerKg,0.5);
+assert.ok(Math.abs(lemonCost.generalExpenses-(5000*18000/25000))<0.001);
+assert.ok(Math.abs(lemonCost.generalExpenses+pomegranateCost.generalExpenses-totalCost.generalExpenses)<0.001);
 const categoryTotals = [1500, 2000];
 const total = categoryTotals.reduce((a, b) => a + b, 0);
 const percentSum = categoryTotals.reduce(

@@ -2336,3 +2336,18 @@ select {
     padding: 28px 22px;
   }
 }
+/* Mobile-only, large touch keypad for kg and money fields. */
+.gurminik-number-pad-backdrop{position:fixed;inset:0;z-index:10000;background:rgb(0 0 0/.55);display:flex;align-items:flex-end;justify-content:center;padding:12px}
+.gurminik-number-pad{width:min(100%,420px);border-radius:24px 24px 14px 14px;background:#111315;color:#fff;padding:16px;box-shadow:0 -18px 60px rgb(0 0 0/.35)}
+.gurminik-number-pad-value{min-height:56px;border:1px solid #35383c;border-radius:14px;background:#1b1e21;padding:10px 16px;text-align:right;font-size:1.8rem;font-weight:800;overflow:hidden}
+.gurminik-number-pad-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.gurminik-number-pad-grid button,.gurminik-number-pad-done{min-height:58px;border:0;border-radius:14px;background:#292d31;color:#fff;font-size:1.25rem;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;touch-action:manipulation}
+.gurminik-number-pad-grid button:active{background:#4a2b18;transform:scale(.98)}
+.gurminik-number-pad-done{width:100%;margin-top:10px;background:#168254}
+@media (min-width:821px) and (pointer:fine){.gurminik-number-pad-backdrop{display:none}}
+.cold-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cold-product-manager{display:grid;gap:14px}.cold-product-manager h3{margin:0}.cold-product-manager span{color:#6b7280}
+.cold-product-chips{display:flex;gap:8px;flex-wrap:wrap}.cold-product-chips>span{display:flex;align-items:center;gap:6px;border:1px solid #d9d5cf;border-radius:999px;padding:7px 10px;background:#fff;color:#191919;font-weight:750}.cold-product-chips button{border:0;background:transparent;color:#9a3412;padding:2px;display:flex}
+.cold-scope-picker>span{font-weight:800}.cold-scope-picker>div{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.cold-scope-picker button{min-height:48px;border:1px solid #d6d3d1;border-radius:12px;background:#f5f5f4;font-weight:850}.cold-scope-picker button.is-active{border-color:#9a4f20;background:#f8eadf;color:#7c2d12}.cold-scope-picker small{grid-column:1/-1;color:#6b625b}
+.cold-scope-badge{display:inline-flex;border-radius:999px;padding:4px 9px;font-size:.72rem;font-weight:900}.cold-scope-badge.is-purchase{background:#e0f2fe;color:#075985}.cold-scope-badge.is-sale{background:#ffedd5;color:#9a3412}.cold-scope-badge.is-general{background:#e7e5e4;color:#44403c}
+@media(max-width:700px){.cold-header-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}.cold-header-actions select{grid-column:1/-1}.cold-product-chips>span{min-height:42px}.cold-scope-picker button{min-height:54px}}

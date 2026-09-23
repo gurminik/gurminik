@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Download, LockKeyhole, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MobileNumberInput } from "@/components/mobile-number-input";
 import {
   ColdState,
   ColdPurchase,
@@ -125,6 +126,9 @@ function Totals({
         unlocked={unlocked}
         unlock={unlock}
       />
+      <Metric label="Alış giderleri" value={summary.purchaseExpenses} financial unlocked={unlocked} unlock={unlock} />
+      <Metric label="Gerçek alış maliyeti" value={summary.realBuyCost} financial unlocked={unlocked} unlock={unlock} />
+      <Metric label="Gerçek alış TL/KG" value={summary.realAverageBuy} financial unlocked={unlocked} unlock={unlock} />
       <Metric
         label="Satılan KG"
         value={kilos(summary.saleKg)}
@@ -145,6 +149,9 @@ function Totals({
         unlocked={unlocked}
         unlock={unlock}
       />
+      <Metric label="Satış giderleri" value={summary.saleExpenses} financial unlocked={unlocked} unlock={unlock} />
+      <Metric label="Satış gideri TL/KG" value={summary.saleExpensePerKg} financial unlocked={unlocked} unlock={unlock} />
+      <Metric label="Genel gider payı" value={summary.generalExpenses} financial unlocked={unlocked} unlock={unlock} />
       <Metric
         label="Depo gideri"
         value={summary.expenses}
@@ -159,14 +166,21 @@ function Totals({
         unlock={unlock}
       />
       <Metric
-        label="Gerçekleşmiş kâr"
+        label="Brüt kâr"
+        value={summary.grossProfit}
+        financial
+        unlocked={unlocked}
+        unlock={unlock}
+      />
+      <Metric
+        label="Net kâr"
         value={summary.profit}
         financial
         unlocked={unlocked}
         unlock={unlock}
       />
       <Metric
-        label="KG başına kâr"
+        label="KG başına net kâr"
         value={summary.profitPerKg}
         financial
         unlocked={unlocked}
@@ -178,7 +192,6 @@ function Totals({
 
 export function ColdStorage({
   state,
-  products,
   userId,
   financeUnlocked,
   requestFinanceUnlock,
@@ -186,7 +199,6 @@ export function ColdStorage({
   mutate,
 }: {
   state: ColdState;
-  products: string[];
   userId: string;
   financeUnlocked: boolean;
   requestFinanceUnlock: () => void;
@@ -200,12 +212,31 @@ export function ColdStorage({
     [purchaseSearch, setPurchaseSearch] = useState(""),
     [saleSearch, setSaleSearch] = useState(""),
     [expenseSearch, setExpenseSearch] = useState(""),
+    [expenseScopeFilter, setExpenseScopeFilter] = useState<"all"|ColdExpense["scope"]>("all"),
     [page, setPage] = useState(1),
     [editing, setEditing] = useState<
       ColdPurchase | ColdSale | ColdExpense | null
     >(null),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
+    [entryProduct, setEntryProduct] = useState(() =>
+      typeof window === "undefined"
+        ? ""
+        : localStorage.getItem(`gurminik:${userId}:cold:entry-product`) || "",
+    ),
+    [expenseProduct, setExpenseProduct] = useState(() =>
+      typeof window === "undefined"
+        ? ""
+        : localStorage.getItem(`gurminik:${userId}:cold:expense-product`) || "",
+    ),
+    [expenseScope, setExpenseScope] = useState<ColdExpense["scope"]>(() => {
+      const value =
+        typeof window === "undefined"
+          ? ""
+          : localStorage.getItem(`gurminik:${userId}:cold:expense-scope`);
+      return value === "purchase" || value === "sale" ? value : "general";
+    }),
+    [manageProducts, setManageProducts] = useState(false),
     [expenseCategory, setExpenseCategory] = useState(
       COLD_DEFAULT_CATEGORIES[0],
     );
@@ -214,12 +245,22 @@ export function ColdStorage({
     "cold_storage",
   );
   const lock = useRef(false);
+  const prefKey = (name: string) => `gurminik:${userId}:cold:${name}`;
+  const activeColdProducts = (state.products || []).filter((x) => x.isActive),
+    effectiveEntryProduct = activeColdProducts.some(
+      (x) => norm(x.name) === norm(entryProduct),
+    )
+      ? entryProduct
+      : activeColdProducts[0]?.name || "",
+    effectiveExpenseProduct = activeColdProducts.some(
+      (x) => norm(x.name) === norm(expenseProduct),
+    )
+      ? expenseProduct
+      : effectiveEntryProduct;
   const names = [
     ...new Map(
       [
         ...coldProducts(state),
-        ...products,
-        ..."Portakal,Mandalina,Limon,Greyfurt,Nar".split(","),
       ].map((x) => [norm(x), x]),
     ).values(),
   ].sort((a, b) => a.localeCompare(b, "tr-TR"));
@@ -247,6 +288,7 @@ export function ColdStorage({
   const ex = state.expenses.filter(
     (x) =>
       inRange(x) &&
+      (expenseScopeFilter === "all" || (x.scope || "general") === expenseScopeFilter) &&
       (!product || !x.product || match(x.product)) &&
       [x.title, x.category, x.product, x.note].some((v) =>
         norm(v).includes(norm(expenseSearch)),
@@ -275,7 +317,11 @@ export function ColdStorage({
       requestFinanceUnlock();
       return;
     }
-    if ("category" in row) setExpenseCategory(row.category);
+    if ("category" in row) {
+      setExpenseCategory(row.category);
+      setExpenseScope(row.scope || "general");
+      setExpenseProduct(row.product);
+    } else setEntryProduct(row.product);
     setEditing(row);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -303,10 +349,26 @@ export function ColdStorage({
         if (!(quantity > 0) || price < 0)
           throw Error("KG pozitif, fiyat sıfır veya daha büyük olmalıdır.");
         const selected = String(data.product || "").trim();
-        if (!selected) throw Error("Ürün seçin veya yeni ürün yazın.");
+        if (!selected) throw Error("Önce Soğuk Hava ürün yönetiminden ürün ekleyin.");
         data.product = selected;
+        const selectedRow = (state.products || []).find((x)=>x.isActive && norm(x.name)===norm(selected));
+        if (!selectedRow) throw Error("Kayıtlı ve aktif bir ürün seçin.");
+        data.productId = selectedRow.id;
+        setEntryProduct(selectedRow.name);
+        localStorage.setItem(prefKey("entry-product"),selectedRow.name);
       }
       if (tab === "expenses") {
+        data.scope = expenseScope;
+        if (expenseScope !== "general" && !String(data.product || "").trim())
+          throw Error("Alış veya satış gideri için ürün seçin.");
+        if (String(data.product || "").trim()) {
+          const selectedRow=(state.products || []).find((x)=>x.isActive && norm(x.name)===norm(String(data.product)));
+          if (!selectedRow) throw Error("Kayıtlı ve aktif bir ürün seçin.");
+          data.productId=selectedRow.id;
+          setExpenseProduct(selectedRow.name);
+          localStorage.setItem(prefKey("expense-product"),selectedRow.name);
+        }
+        localStorage.setItem(prefKey("expense-scope"),expenseScope);
         data.amount = Number(data.amount || 0);
         if (String(data.category) === "Fire") {
           if (!(Number(data.lossKg) > 0))
@@ -351,6 +413,21 @@ export function ColdStorage({
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Kategori eklenemedi.");
     }
+  }
+  async function addProduct() {
+    const name=window.prompt("Yeni Soğuk Hava ürünü:")?.trim();
+    if(!name)return;
+    const existing=(state.products||[]).find((x)=>norm(x.name)===norm(name));
+    if(existing?.isActive){setMessage("Ürün zaten mevcut.");return;}
+    if(existing){
+      try{await mutate("reactivateColdProduct",{id:existing.id});setMessage(`${existing.name} yeniden kullanıma açıldı.`)}catch(e){setMessage(e instanceof Error?e.message:"Ürün yeniden açılamadı.")}
+      return;
+    }
+    try{await mutate("addColdProduct",{id:crypto.randomUUID(),name});setMessage(`${name} ürünü eklendi.`)}catch(e){setMessage(e instanceof Error?e.message:"Ürün eklenemedi.")}
+  }
+  async function archiveProduct(id:string,name:string){
+    if(!window.confirm(`${name} ürününü listeden kaldırmak istiyor musunuz? Eski kayıtlar korunur.`))return;
+    try{await mutate("archiveColdProduct",{id});setMessage(`${name} listeden kaldırıldı.`)}catch(e){setMessage(e instanceof Error?e.message:"Ürün kaldırılamadı.")}
   }
   async function action(
     kind: "Purchase" | "Sale",
@@ -397,22 +474,22 @@ export function ColdStorage({
             eklenmez.
           </span>
         </div>
-        <select
-          aria-label="Soğuk Hava ürün filtresi"
-          value={product}
-          onChange={(e) => {
-            setProduct(e.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">Tüm ürünler</option>
-          {names.map((x) => (
-            <option key={x} value={x}>
-              {x}
-            </option>
-          ))}
-        </select>
+        <div className="cold-header-actions">
+          <select aria-label="Soğuk Hava ürün filtresi" value={product} onChange={(e) => {setProduct(e.target.value);setPage(1)}}>
+            <option value="">Tüm ürünler</option>
+            {names.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+          <Button type="button" variant="outline" onClick={()=>setManageProducts((x)=>!x)}>Ürünler</Button>
+          {permission.can_create && <Button type="button" onClick={()=>void addProduct()}><Plus size={16}/> Ürün Ekle</Button>}
+        </div>
       </section>
+      {manageProducts && <section className="gurminik-panel cold-product-manager">
+        <div><h3>Soğuk Hava ürünleri</h3><span>Silinen ürün pasif olur; geçmiş kayıtlar korunur.</span></div>
+        <div className="cold-product-chips">
+          {(state.products||[]).filter((x)=>x.isActive).map((x)=><span key={x.id}>{x.name}{permission.can_delete&&<button type="button" aria-label={`${x.name} ürününü kaldır`} onClick={()=>void archiveProduct(x.id,x.name)}><Trash2 size={14}/></button>}</span>)}
+          {!(state.products||[]).some((x)=>x.isActive)&&<p>Alış veya satış girmeden önce ürün ekleyin.</p>}
+        </div>
+      </section>}
       <DateRangeFilter
         range={range}
         onChange={(next) => {
@@ -452,10 +529,10 @@ export function ColdStorage({
             unlock={requestFinanceUnlock}
           />
           <p className="cold-note">
-            Satılan mal maliyeti işlem tarihindeki hareketli ağırlıklı
-            ortalamadan hesaplanır. Depo giderleri seçili dönemde satılan KG
-            payına göre ürünlere dağıtılır. Fire yalnızca Giderler bölümündeki
-            manuel Fire kayıtlarından gelir.
+            Satılan mal maliyeti hareketli ağırlıklı ortalamadan hesaplanır.
+            ALIŞ giderleri ürün maliyetine eklenir, SATIŞ giderleri kârdan
+            düşülür. GENEL giderler ürünlerin alış + satış KG hacmine göre
+            dağıtılır; böylece ürün toplamları depo toplamıyla eşleşir.
           </p>
           <div className="gurminik-table-panel cold-table">
             <table>
@@ -465,7 +542,7 @@ export function ColdStorage({
                   <th>Alınan</th>
                   <th>Satılan</th>
                   <th>Fire</th>
-                  <th>Gerçekleşmiş kâr</th>
+                  <th>Alış gideri</th><th>Satış gideri</th><th>Genel pay</th><th>Toplam gider</th><th>Net kâr</th><th>Net TL/KG</th>
                 </tr>
               </thead>
               <tbody>
@@ -483,13 +560,7 @@ export function ColdStorage({
                         <td>{kilos(row.buyKg)}</td>
                         <td>{kilos(row.saleKg)}</td>
                         <td>{kilos(row.fireKg)}</td>
-                        <td>
-                          <Money
-                            value={row.profit}
-                            unlocked={financeUnlocked}
-                            unlock={requestFinanceUnlock}
-                          />
-                        </td>
+                        {[row.purchaseExpenses,row.saleExpenses,row.generalExpenses,row.expenses,row.profit,row.profitPerKg].map((value,i)=><td key={i}><Money value={value} unlocked={financeUnlocked} unlock={requestFinanceUnlock}/></td>)}
                       </tr>
                     );
                   })}
@@ -549,12 +620,10 @@ export function ColdStorage({
               <div className="cold-fields">
                 <label>
                   Ürün
-                  <input
-                    name="product"
-                    list="cold-product-list"
-                    defaultValue={(editing as ColdPurchase)?.product || product}
-                    required
-                  />
+                  <select name="product" value={effectiveEntryProduct} onChange={(e)=>{setEntryProduct(e.target.value);localStorage.setItem(prefKey("entry-product"),e.target.value)}} required>
+                    <option value="" disabled>Ürün seçin</option>
+                    {(state.products||[]).filter((x)=>x.isActive || norm(x.name)===norm((editing as ColdPurchase)?.product||"")).map((x)=><option key={x.id} value={x.name}>{x.name}</option>)}
+                  </select>
                 </label>
                 <label>
                   Tedarikçi
@@ -573,9 +642,8 @@ export function ColdStorage({
                 </label>
                 <label>
                   KG
-                  <input
+                  <MobileNumberInput
                     name="kg"
-                    type="number"
                     step="0.01"
                     min="0.01"
                     defaultValue={(editing as ColdPurchase)?.kg || ""}
@@ -584,9 +652,8 @@ export function ColdStorage({
                 </label>
                 <label>
                   Alış fiyatı (TL/KG)
-                  <input
+                  <MobileNumberInput
                     name="price"
-                    type="number"
                     step="0.0001"
                     min="0"
                     defaultValue={(editing as ColdPurchase)?.price ?? ""}
@@ -694,12 +761,10 @@ export function ColdStorage({
               <div className="cold-fields">
                 <label>
                   Ürün
-                  <input
-                    name="product"
-                    list="cold-product-list"
-                    defaultValue={(editing as ColdSale)?.product || product}
-                    required
-                  />
+                  <select name="product" value={effectiveEntryProduct} onChange={(e)=>{setEntryProduct(e.target.value);localStorage.setItem(prefKey("entry-product"),e.target.value)}} required>
+                    <option value="" disabled>Ürün seçin</option>
+                    {(state.products||[]).filter((x)=>x.isActive || norm(x.name)===norm((editing as ColdSale)?.product||"")).map((x)=><option key={x.id} value={x.name}>{x.name}</option>)}
+                  </select>
                 </label>
                 <label>
                   Alıcı / Firma
@@ -711,9 +776,8 @@ export function ColdStorage({
                 </label>
                 <label>
                   KG
-                  <input
+                  <MobileNumberInput
                     name="kg"
-                    type="number"
                     step="0.01"
                     min="0.01"
                     defaultValue={(editing as ColdSale)?.kg || ""}
@@ -722,9 +786,8 @@ export function ColdStorage({
                 </label>
                 <label>
                   Satış fiyatı (TL/KG)
-                  <input
+                  <MobileNumberInput
                     name="price"
-                    type="number"
                     step="0.0001"
                     min="0"
                     defaultValue={(editing as ColdSale)?.price ?? ""}
@@ -793,6 +856,12 @@ export function ColdStorage({
                 setPage(1);
               }}
             />
+            <select aria-label="Gider türü filtresi" value={expenseScopeFilter} onChange={(e)=>{setExpenseScopeFilter(e.target.value as typeof expenseScopeFilter);setPage(1)}}>
+              <option value="all">Tüm gider türleri</option>
+              <option value="purchase">Alış giderleri</option>
+              <option value="sale">Satış giderleri</option>
+              <option value="general">Genel giderler</option>
+            </select>
           </div>
           <div className="gurminik-summary-grid">
             <Metric
@@ -843,21 +912,9 @@ export function ColdStorage({
                   <>
                     <input type="hidden" name="title" value="Fire" />
                     <label>
-                      Ürün
-                      <input
-                        name="product"
-                        list="cold-product-list"
-                        defaultValue={
-                          (editing as ColdExpense)?.product || product
-                        }
-                        required
-                      />
-                    </label>
-                    <label>
                       Fire kg
-                      <input
+                      <MobileNumberInput
                         name="lossKg"
-                        type="number"
                         min="0.01"
                         step="0.01"
                         defaultValue={(editing as ColdExpense)?.lossKg || ""}
@@ -866,9 +923,8 @@ export function ColdStorage({
                     </label>
                     <label>
                       TL karşılığı (isteğe bağlı)
-                      <input
+                      <MobileNumberInput
                         name="amount"
-                        type="number"
                         min="0"
                         step="0.01"
                         defaultValue={(editing as ColdExpense)?.amount || ""}
@@ -887,9 +943,8 @@ export function ColdStorage({
                     </label>
                     <label>
                       Tutar (TL)
-                      <input
+                      <MobileNumberInput
                         name="amount"
-                        type="number"
                         min="0.01"
                         step="0.01"
                         defaultValue={(editing as ColdExpense)?.amount || ""}
@@ -913,6 +968,21 @@ export function ColdStorage({
                     name="note"
                     defaultValue={(editing as ColdExpense)?.note || ""}
                   />
+                </label>
+                <div className="cold-wide cold-scope-picker">
+                  <span>Gider türü</span>
+                  <div>
+                    <button type="button" className={expenseScope==="purchase"?"is-active":""} onClick={()=>{const next=expenseScope==="purchase"?"general":"purchase";setExpenseScope(next);localStorage.setItem(prefKey("expense-scope"),next)}}>ALIŞ</button>
+                    <button type="button" className={expenseScope==="sale"?"is-active":""} onClick={()=>{const next=expenseScope==="sale"?"general":"sale";setExpenseScope(next);localStorage.setItem(prefKey("expense-scope"),next)}}>SATIŞ</button>
+                    <small>{expenseScope==="general"?"Seçim yok: Genel Soğuk Hava gideri":expenseScope==="purchase"?"Ürünün gerçek alış maliyetine eklenir":"Net kârdan satış gideri olarak düşülür"}</small>
+                  </div>
+                </div>
+                <label className="cold-wide">
+                  Ürün {expenseScope==="general" && expenseCategory!=="Fire" ? "(isteğe bağlı)" : ""}
+                  <select name="product" value={effectiveExpenseProduct} onChange={(e)=>{setExpenseProduct(e.target.value);localStorage.setItem(prefKey("expense-product"),e.target.value)}} required={expenseScope!=="general" || expenseCategory==="Fire"}>
+                    <option value="">Ürün seçilmedi</option>
+                    {(state.products||[]).filter((x)=>x.isActive || norm(x.name)===norm((editing as ColdExpense)?.product||"")).map((x)=><option key={x.id} value={x.name}>{x.name}</option>)}
+                  </select>
                 </label>
               </div>
               <div className="cold-actions">
@@ -962,6 +1032,7 @@ export function ColdStorage({
                   <th>Gider</th>
                   <th>Kategori</th>
                   <th>Ürün / Fire</th>
+                  <th>Tür</th>
                   <th>Tutar</th>
                   <th>Not</th>
                   <th>İşlem</th>
@@ -978,6 +1049,7 @@ export function ColdStorage({
                         ? `${x.product}${x.lossKg ? ` · ${kilos(x.lossKg)}` : ""}`
                         : "—"}
                     </td>
+                    <td><span className={`cold-scope-badge is-${x.scope}`}>{x.scope==="purchase"?"ALIŞ":x.scope==="sale"?"SATIŞ":"GENEL"}</span></td>
                     <td>
                       <Money
                         value={x.amount}
@@ -1044,11 +1116,6 @@ export function ColdStorage({
           </Button>
         </div>
       )}
-      <datalist id="cold-product-list">
-        {names.map((x) => (
-          <option key={x} value={x} />
-        ))}
-      </datalist>
     </div>
   );
 }

@@ -7,11 +7,14 @@ export function DateRangeFilter({
   range,
   onChange,
   title = "Tarih aralığı",
+  showToday = false,
 }: {
   range: RememberedDateRange;
   onChange: (next: RememberedDateRange) => void;
   title?: string;
+  showToday?: boolean;
 }) {
+  const d=new Date(), today=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10), todayActive=range.start===today&&range.end===today;
   return (
     <section className="gurminik-panel gurminik-date-range">
       <div>
@@ -19,6 +22,7 @@ export function DateRangeFilter({
         <span>Seçiminiz bu hesapta ve yalnızca bu bölüm için hatırlanır.</span>
       </div>
       <div className="gurminik-range-inputs">
+        {showToday && <Button type="button" variant={todayActive?"default":"outline"} onClick={()=>onChange({start:today,end:today})}>Bugün</Button>}
         <label>
           Başlangıç
           <Input

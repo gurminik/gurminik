@@ -25,7 +25,7 @@ export function inRememberedDateRange(
   return stamp >= bounds.start && stamp < bounds.end;
 }
 
-export function useRememberedDateRange(userId: string, scope: string) {
+export function useRememberedDateRange(userId: string, scope: string, defaultToToday = false) {
   const storageKey = `gurminik_date_range_v1:${userId}:${scope}`;
   const [range, setRange] = useState<RememberedDateRange>({
     start: "",
@@ -41,11 +41,16 @@ export function useRememberedDateRange(userId: string, scope: string) {
         typeof saved.end === "string"
       )
         timer = setTimeout(() => setRange(saved), 0);
+      else if (defaultToToday) {
+        const d=new Date(), today=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+        timer=setTimeout(()=>setRange({start:today,end:today}),0);
+        localStorage.setItem(storageKey,JSON.stringify({start:today,end:today}));
+      }
     } catch {}
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [storageKey]);
+  }, [storageKey,defaultToToday]);
 
   const rememberRange: Dispatch<SetStateAction<RememberedDateRange>> = (
     next,

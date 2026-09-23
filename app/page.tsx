@@ -101,6 +101,7 @@ import {
 import { ColdStorage, ColdReport } from "@/components/cold-storage";
 import { ActivityLogs, type ActivityLog } from "@/components/activity-logs";
 import { DateRangeFilter } from "@/components/date-range-filter";
+import { MobileNumberInput } from "@/components/mobile-number-input";
 import {
   inRememberedDateRange,
   useRememberedDateRange,
@@ -672,12 +673,12 @@ export default function Home() {
     } satisfies State;
   }, []);
   const fetchCold = useCallback(async (): Promise<ColdState> => {
-    const [p, s, e, c] = await Promise.all([
+    const [p, s, e, c, cp] = await Promise.all([
       fetchAllRows((from, to) =>
         supabase
           .from("cold_storage_purchases")
           .select(
-            "id,product_name,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,notes,status",
+            "id,product_id,product_name,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,notes,status",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -687,7 +688,7 @@ export default function Home() {
         supabase
           .from("cold_storage_sales")
           .select(
-            "id,product_name,buyer_name,quantity_kg,unit_sale_price,transaction_at,notes,status",
+            "id,product_id,product_name,buyer_name,quantity_kg,unit_sale_price,transaction_at,notes,status",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -697,7 +698,7 @@ export default function Home() {
         supabase
           .from("cold_storage_expenses")
           .select(
-            "id,title,category,amount,product_name,loss_kg,transaction_at,notes",
+            "id,product_id,title,category,amount,product_name,loss_kg,expense_scope,transaction_at,notes",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -711,12 +712,16 @@ export default function Home() {
           .order("id")
           .range(from, to),
       ),
+      fetchAllRows((from, to) =>
+        supabase.from("cold_storage_products").select("id,name,is_active").order("name").order("id").range(from,to),
+      ),
     ]);
-    const failed = [p, s, e, c].find((x) => x.error);
+    const failed = [p, s, e, c, cp].find((x) => x.error);
     if (failed?.error) throw failed.error;
     return {
       purchases: (p.data || []).map((x) => ({
         id: x.id,
+        productId: x.product_id || "",
         product: x.product_name,
         person: x.supplier_name,
         plate: x.vehicle_plate,
@@ -728,6 +733,7 @@ export default function Home() {
       })),
       sales: (s.data || []).map((x) => ({
         id: x.id,
+        productId: x.product_id || "",
         product: x.product_name,
         buyer: x.buyer_name,
         kg: Number(x.quantity_kg),
@@ -738,15 +744,18 @@ export default function Home() {
       })),
       expenses: (e.data || []).map((x) => ({
         id: x.id,
+        productId: x.product_id || "",
         title: x.title,
         category: x.category,
         amount: Number(x.amount),
         product: x.product_name || "",
         lossKg: Number(x.loss_kg || 0),
+        scope: x.expense_scope === "purchase" || x.expense_scope === "sale" ? x.expense_scope : "general",
         dateTime: x.transaction_at,
         note: x.notes,
       })),
       categories: (c.data || []).map((x) => ({ id: x.id, name: x.name })),
+      products: (cp.data || []).map((x)=>({id:x.id,name:x.name,isActive:x.is_active!==false})),
     };
   }, []);
   const load = useCallback(
@@ -1078,6 +1087,7 @@ export default function Home() {
           .eq("id", data.id);
       else if (action === "addColdPurchase" || action === "editColdPurchase") {
         const row = {
+          product_id: data.productId || null,
           product_name: String(data.product).trim(),
           supplier_name: String(data.person).trim(),
           vehicle_plate: String(data.plate || "").toLocaleUpperCase("tr-TR"),
@@ -1105,6 +1115,7 @@ export default function Home() {
           .eq("id", data.id);
       else if (action === "addColdSale" || action === "editColdSale") {
         const row = {
+          product_id: data.productId || null,
           product_name: String(data.product).trim(),
           buyer_name: String(data.buyer).trim(),
           quantity_kg: Number(data.kg),
@@ -1135,6 +1146,8 @@ export default function Home() {
           category: String(data.category).trim(),
           amount: Number(data.amount || 0),
           product_name: String(data.product || "").trim() || null,
+          product_id: data.productId || null,
+          expense_scope: String(data.scope || "general"),
           loss_kg:
             data.lossKg === "" || data.lossKg === undefined
               ? null
@@ -1166,6 +1179,12 @@ export default function Home() {
             { id: data.id, name: String(data.name).trim() },
             { onConflict: "id", ignoreDuplicates: true },
           );
+      else if (action === "addColdProduct")
+        result = await supabase.from("cold_storage_products").upsert({id:data.id,name:String(data.name).trim(),is_active:true},{onConflict:"id",ignoreDuplicates:true});
+      else if (action === "archiveColdProduct")
+        result = await supabase.from("cold_storage_products").update({is_active:false}).eq("id",data.id);
+      else if (action === "reactivateColdProduct")
+        result = await supabase.from("cold_storage_products").update({is_active:true}).eq("id",data.id);
       else if (action === "addFavorite")
         result = await supabase
           .from("favorites")
@@ -1184,7 +1203,7 @@ export default function Home() {
       else if (action === "deleteFavorite")
         result = await supabase.from("favorites").delete().eq("id", data.id);
       else if (action === "importBackup") {
-        result = await supabase.rpc("restore_gurminik_backup_v3", {
+        result = await supabase.rpc("restore_gurminik_backup_v4", {
           payload: data,
           restore_mode: "merge",
         });
@@ -1205,6 +1224,7 @@ export default function Home() {
       if (action === "addColdPurchase" || action === "editColdPurchase") {
         const row: ColdPurchase = {
           id: String(data.id),
+          productId: String(data.productId || ""),
           product: String(data.product),
           person: String(data.person),
           plate: String(data.plate || ""),
@@ -1227,6 +1247,7 @@ export default function Home() {
       else if (action === "addColdSale" || action === "editColdSale") {
         const row: ColdSale = {
           id: String(data.id),
+          productId: String(data.productId || ""),
           product: String(data.product),
           buyer: String(data.buyer),
           kg: Number(data.kg),
@@ -1248,11 +1269,13 @@ export default function Home() {
       else if (action === "addColdExpense" || action === "editColdExpense") {
         const row: ColdExpense = {
           id: String(data.id),
+          productId: String(data.productId || ""),
           title: String(data.title),
           category: String(data.category),
           amount: Number(data.amount || 0),
           product: String(data.product || ""),
           lossKg: Number(data.lossKg || 0),
+          scope: data.scope === "purchase" || data.scope === "sale" ? data.scope : "general",
           dateTime,
           note: String(data.note || ""),
         };
@@ -1267,6 +1290,9 @@ export default function Home() {
           ...prev.categories,
           { id: String(data.id), name: String(data.name) } as ColdCategory,
         ];
+      else if (action === "addColdProduct") next.products=[...(prev.products||[]),{id:String(data.id),name:String(data.name),isActive:true}];
+      else if (action === "archiveColdProduct") next.products=(prev.products||[]).map((x)=>x.id===data.id?{...x,isActive:false}:x);
+      else if (action === "reactivateColdProduct") next.products=(prev.products||[]).map((x)=>x.id===data.id?{...x,isActive:true}:x);
       if (session?.user.id)
         try {
           localStorage.setItem(
@@ -1502,6 +1528,9 @@ export default function Home() {
       editColdExpense: ["cold_storage", "can_update"],
       deleteColdExpense: ["cold_storage", "can_delete"],
       addColdCategory: ["cold_storage", "can_create"],
+      addColdProduct: ["cold_storage", "can_create"],
+      archiveColdProduct: ["cold_storage", "can_delete"],
+      reactivateColdProduct: ["cold_storage", "can_update"],
     };
     const needed = requirement[action];
     if (needed && !permissionFor(needed[0])[needed[1]]) {
@@ -1552,6 +1581,7 @@ export default function Home() {
     if (action === "addColdPurchase" || action === "addColdSale") {
       const row = {
         id: String(data.id),
+        productId: String(data.productId || ""),
         product: String(data.product),
         kg: Number(data.kg),
         price: Number(data.price),
@@ -1753,7 +1783,7 @@ export default function Home() {
     if (!navigator.onLine)
       throw new Error("Eksiksiz yedek almak için internet bağlantısı gerekir.");
     const { data, error: backupError } = await supabase.rpc(
-      "export_gurminik_backup_v3",
+      "export_gurminik_backup_v4",
     );
     if (backupError) throw backupError;
     return normalizeBackupPayload({
@@ -1777,7 +1807,7 @@ export default function Home() {
         "Soğuk Hava yedeğini aktarmak için bu modülde ekleme yetkisi gerekir.",
       );
     const { data, error: restoreError } = await supabase.rpc(
-      "restore_gurminik_backup_v3",
+      "restore_gurminik_backup_v4",
       { payload, restore_mode: mode },
     );
     if (restoreError) throw restoreError;
@@ -2365,7 +2395,6 @@ export default function Home() {
             <ColdStorage
               userId={session.user.id}
               state={cold}
-              products={state.products.map((p) => p.name)}
               financeUnlocked={financeUnlocked}
               requestFinanceUnlock={requestFinanceUnlock}
               permission={permissionFor("cold_storage")}
@@ -2608,7 +2637,7 @@ function AuthorizationPanel({
     }
     setBusy(true); setPanelError(""); setMessage("");
     try {
-      const { data, error } = await supabase.rpc("reset_gurminik_application", {
+      const { data, error } = await supabase.rpc("reset_gurminik_application_v2", {
         input_password: resetPassword,
         confirmation_text: resetPhrase,
       });
@@ -2924,7 +2953,7 @@ function Dashboard({
   purchasePermission: Permission;
   salePermission: Permission;
 }) {
-  const { range, setRange } = useRememberedDateRange(userId, "dashboard"),
+  const { range, setRange } = useRememberedDateRange(userId, "dashboard", true),
     filteredPurchases = live.filter((x) =>
       inRememberedDateRange(x.dateTime, range),
     ),
@@ -2961,6 +2990,7 @@ function Dashboard({
         range={range}
         onChange={setRange}
         title="Ana Sayfa tarih aralığı"
+        showToday
       />
       <div className="gurminik-search-panel">
         <p>Tüm kayıtlarda ara</p>
@@ -6330,7 +6360,15 @@ function EntryDialog({
       (s, x) => s + Number(x.kg) * Number(x.sellPrice),
       0,
     ),
-    averageSale = soldKg ? soldAmount / soldKg : 0;
+    averageBuy = sumKg ? sumCost / sumKg : 0,
+    averageSale = soldKg ? soldAmount / soldKg : 0,
+    allSoldKg = state.sales.filter((x)=>x.status!=="cancelled").reduce((s,x)=>s+Number(x.kg),0),
+    expenseShare = allSoldKg ? soldKg / allSoldKg : 0,
+    allocatedExpenseRows = state.expenses.map((x)=>({...x,allocated:Number(x.amount)*expenseShare})),
+    allocatedExpenses = allocatedExpenseRows.reduce((s,x)=>s+x.allocated,0),
+    costOfSold = averageBuy * soldKg,
+    grossProfit = soldAmount - costOfSold,
+    netProfit = grossProfit - allocatedExpenses;
   return (
     <Dialog
       open={!!type}
@@ -6626,18 +6664,21 @@ function EntryDialog({
         {type === "detail" && (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Stat label="Toplam miktar" value={kg(sumKg)} />
-              <Stat label="Toplam alış" value={money(sumCost)} />
-              <Stat
-                label="Ortalama maliyet"
-                value={money(sumKg ? sumCost / sumKg : 0) + "/kg"}
-              />
+              <Stat label="Toplam alış kg" value={kg(sumKg)} />
+              <Stat label="Toplam satış kg" value={kg(soldKg)} />
+              <ProtectedStat label="Ortalama alış fiyatı" value={money(averageBuy)+"/kg"} unlocked={financeUnlocked} onUnlock={() => setDetailUnlocking(true)} />
               <ProtectedStat
                 label="Ortalama satış fiyatı"
                 value={money(averageSale) + "/kg"}
                 unlocked={financeUnlocked}
                 onUnlock={() => setDetailUnlocking(true)}
               />
+              <ProtectedStat label="Ürüne düşen gider" value={money(allocatedExpenses)} unlocked={financeUnlocked} onUnlock={()=>setDetailUnlocking(true)} />
+              <ProtectedStat label="Kg başına gider" value={money(soldKg?allocatedExpenses/soldKg:0)+"/kg"} unlocked={financeUnlocked} onUnlock={()=>setDetailUnlocking(true)} />
+              <ProtectedStat label="Brüt kâr" value={money(grossProfit)} unlocked={financeUnlocked} onUnlock={()=>setDetailUnlocking(true)} />
+              <ProtectedStat label="Kg başına brüt kâr" value={money(soldKg?grossProfit/soldKg:0)+"/kg"} unlocked={financeUnlocked} onUnlock={()=>setDetailUnlocking(true)} />
+              <ProtectedStat label="Giderler sonrası net kâr" value={money(netProfit)} unlocked={financeUnlocked} onUnlock={()=>setDetailUnlocking(true)} />
+              <ProtectedStat label="Kg başına net kâr" value={money(soldKg?netProfit/soldKg:0)+"/kg"} unlocked={financeUnlocked} onUnlock={()=>setDetailUnlocking(true)} />
             </div>
             {detailUnlocking && !financeUnlocked && (
               <form
@@ -6665,6 +6706,11 @@ function EntryDialog({
                 {dialogError && <p>{dialogError}</p>}
               </form>
             )}
+            <div className="gurminik-panel gurminik-cost-allocation">
+              <h3>Gider dağılımı</h3>
+              <p>Genel işletme giderleri, her ürünün toplam satılan KG içindeki payına göre dağıtılır. Bu ürünün payı %{new Intl.NumberFormat("tr-TR",{maximumFractionDigits:1}).format(expenseShare*100)}.</p>
+              {financeUnlocked && allocatedExpenseRows.length ? <div className="overflow-auto"><table><thead><tr><th>Gider</th><th>Kategori</th><th>Toplam</th><th>Bu ürüne düşen</th></tr></thead><tbody>{allocatedExpenseRows.map((x)=><tr key={x.id}><td>{x.title}</td><td>{x.category}</td><td>{money(x.amount)}</td><td>{money(x.allocated)}</td></tr>)}</tbody></table></div> : !allocatedExpenseRows.length ? <p>Dağıtılacak gider kaydı yok.</p> : null}
+            </div>
             <div className="overflow-hidden rounded-xl border">
               <PurchaseTable
                 rows={state.purchases.filter((x) => x.productId === productId)}
@@ -6764,10 +6810,10 @@ function PurchaseEntryForm({
       </label>
       <label className="grid gap-2 text-sm font-bold">
         Miktar (kg)
-        <Input
+        <MobileNumberInput
           name="kg"
-          type="number"
           step="0.01"
+          className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           required
@@ -6775,10 +6821,10 @@ function PurchaseEntryForm({
       </label>
       <label className="grid gap-2 text-sm font-bold">
         Alış fiyatı (TL/kg)
-        <Input
+        <MobileNumberInput
           name="buyPrice"
-          type="number"
           step="0.01"
+          className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm"
           value={price}
           onChange={(e) => setPrice(e.target.value)}
           required
@@ -6912,11 +6958,11 @@ function SaleEntryForm({
       <Field name="kg" label="Satış miktarı (kg)" type="number" />
       <label className="grid gap-2 text-sm font-bold">
         Satış fiyatı (TL/kg)
-        <Input
+        <MobileNumberInput
           name="sellPrice"
-          type="number"
           step="0.01"
           min="0"
+          className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm"
           value={price}
           onChange={(e) => setPrice(e.target.value)}
           required
@@ -6972,14 +7018,11 @@ function Field({
   return (
     <label className="grid gap-2 text-sm font-bold">
       {label}
-      <Input
-        name={name}
-        type={type}
-        defaultValue={defaultValue}
-        required={required}
-        placeholder={placeholder}
-        step={type === "number" ? "0.01" : undefined}
-      />
+      {type === "number" ? (
+        <MobileNumberInput name={name} defaultValue={defaultValue} required={required} placeholder={placeholder} step="0.01" className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm" />
+      ) : (
+        <Input name={name} type={type} defaultValue={defaultValue} required={required} placeholder={placeholder} />
+      )}
     </label>
   );
 }

@@ -8,6 +8,7 @@ export type BackupPayload = {
   schemaVersion: string;
   tables: Record<string, unknown[]>;
   coldStorage: {
+    products: unknown[];
     purchases: unknown[];
     sales: unknown[];
     expenses: unknown[];
@@ -29,6 +30,7 @@ export type BackupSummary = {
   coldSales: number;
   coldExpenses: number;
   coldFire: number;
+  coldProducts: number;
 };
 
 export type RestoreSectionResult = { added: number; skipped: number };
@@ -78,6 +80,7 @@ export function normalizeBackupPayload(raw: unknown): BackupPayload {
     shipments: array(sourceTables.shipments ?? root.shipments),
   };
   const coldStorage = {
+    products: array(cold.products ?? root.coldStorageProducts),
     purchases: array(cold.purchases ?? root.coldStoragePurchases),
     sales: array(cold.sales ?? root.coldStorageSales),
     expenses: array(cold.expenses ?? root.coldStorageExpenses),
@@ -119,6 +122,7 @@ export function backupSummary(payload: BackupPayload): BackupSummary {
     coldSales: payload.coldStorage.sales.length,
     coldExpenses: payload.coldStorage.expenses.length,
     coldFire: payload.coldStorage.expenses.filter(isFire).length,
+    coldProducts: payload.coldStorage.products.length,
   };
 }
 
@@ -146,6 +150,11 @@ export function readBackupSettings(userId: string) {
     favoriteSort:
       localStorage.getItem(`gurminik_favorite_sort:${userId}`) || "",
     dateRanges,
+    coldPreferences: {
+      entryProduct: localStorage.getItem(`gurminik:${userId}:cold:entry-product`) || "",
+      expenseProduct: localStorage.getItem(`gurminik:${userId}:cold:expense-product`) || "",
+      expenseScope: localStorage.getItem(`gurminik:${userId}:cold:expense-scope`) || "general",
+    },
   };
 }
 
@@ -165,6 +174,9 @@ export function restoreBackupSettings(
         JSON.stringify(value),
       );
   }
+  const cold=object(settings.coldPreferences);
+  for(const [name,value] of Object.entries({"entry-product":cold.entryProduct,"expense-product":cold.expenseProduct,"expense-scope":cold.expenseScope}))
+    if(typeof value==="string"&&value)localStorage.setItem(`gurminik:${userId}:cold:${name}`,value);
 }
 
 export function formatRestoreReport(report: RestoreReport) {
@@ -180,6 +192,7 @@ export function formatRestoreReport(report: RestoreReport) {
     accountPayments: "Cari hesap",
     favorites: "Favoriler",
     coldExpenseCategories: "Soğuk Hava gider kategorileri",
+    coldProducts: "Soğuk Hava ürünleri",
     coldPurchases: "Soğuk Hava alışları",
     coldSales: "Soğuk Hava satışları",
     coldExpenses: "Soğuk Hava gider/Fire",

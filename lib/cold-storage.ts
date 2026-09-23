@@ -1,5 +1,6 @@
 export type ColdPurchase = {
   id: string;
+  productId: string;
   product: string;
   person: string;
   plate: string;
@@ -11,6 +12,7 @@ export type ColdPurchase = {
 };
 export type ColdSale = {
   id: string;
+  productId: string;
   product: string;
   buyer: string;
   kg: number;
@@ -21,6 +23,7 @@ export type ColdSale = {
 };
 export type ColdExpense = {
   id: string;
+  productId: string;
   title: string;
   category: string;
   amount: number;
@@ -28,19 +31,23 @@ export type ColdExpense = {
   note: string;
   product: string;
   lossKg: number;
+  scope: "purchase" | "sale" | "general";
 };
 export type ColdCategory = { id: string; name: string };
+export type ColdProduct = { id: string; name: string; isActive: boolean };
 export type ColdState = {
   purchases: ColdPurchase[];
   sales: ColdSale[];
   expenses: ColdExpense[];
   categories: ColdCategory[];
+  products: ColdProduct[];
 };
 export const EMPTY_COLD: ColdState = {
   purchases: [],
   sales: [],
   expenses: [],
   categories: [],
+  products: [],
 };
 export const COLD_DEFAULT_CATEGORIES = [
   "Elektrik",
@@ -59,6 +66,7 @@ const active = (s: { status: string }) => s.status !== "cancelled";
 export function coldProducts(state: ColdState) {
   const names = new Map<string, string>();
   for (const name of [
+    ...(state.products || []).filter((x) => x.isActive).map((x) => x.name),
     ...state.purchases.map((x) => x.product),
     ...state.sales.map((x) => x.product),
     ...state.expenses.map((x) => x.product).filter(Boolean),
@@ -126,11 +134,10 @@ export function coldSummary(
   const sales = state.sales.filter(
     (x) => active(x) && matches(x.product) && within(x),
   );
+  const allPurchases = state.purchases.filter((x) => active(x) && within(x));
   const allSales = state.sales.filter((x) => active(x) && within(x));
   const allExpenses = state.expenses.filter(within);
-  const productExpenses = product
-    ? allExpenses.filter((x) => !x.product || matches(x.product))
-    : allExpenses;
+  const scopedExpenses = allExpenses.filter((x) => !product || !x.product || matches(x.product));
   const fireKg = allExpenses
     .filter(
       (x) => key(x.category) === "fire" && (!product || matches(x.product)),
@@ -140,27 +147,30 @@ export function coldSummary(
     rows.reduce((sum, x) => sum + x.kg, 0);
   const buyKg = quantity(purchases),
     saleKg = quantity(sales),
-    totalSaleKg = quantity(allSales);
+    totalHandledKg = quantity(allPurchases) + quantity(allSales),
+    handledKg = buyKg + saleKg;
   const buyCost = purchases.reduce((sum, x) => sum + x.kg * x.price, 0),
     revenue = sales.reduce((sum, x) => sum + x.kg * x.price, 0);
-  const fullExpense = allExpenses.reduce((sum, x) => sum + x.amount, 0);
-  // Product-tagged costs belong directly to that product; common depot costs are distributed by sold kg.
-  const directExpenses = product
-    ? productExpenses
-        .filter((x) => x.product)
-        .reduce((sum, x) => sum + x.amount, 0)
+  const sumScope = (scope: ColdExpense["scope"]) =>
+    scopedExpenses.filter((x) => (x.scope || "general") === scope && (!product || matches(x.product)))
+      .reduce((sum, x) => sum + x.amount, 0);
+  const purchaseExpenses = sumScope("purchase"), saleExpenses = sumScope("sale");
+  const allGeneral = allExpenses.filter((x) => (x.scope || "general") === "general");
+  const generalTotal = allGeneral.reduce((sum, x) => sum + x.amount, 0);
+  const directGeneral = product
+    ? allGeneral.filter((x) => x.product && matches(x.product)).reduce((sum,x)=>sum+x.amount,0)
+    : generalTotal;
+  const sharedGeneral = product
+    ? allGeneral.filter((x) => !x.product).reduce((sum,x)=>sum+x.amount,0)
     : 0;
-  const commonExpenses = product
-    ? allExpenses
-        .filter((x) => !x.product)
-        .reduce((sum, x) => sum + x.amount, 0)
-    : fullExpense;
-  const allocatedExpenses = product
-    ? directExpenses +
-      (totalSaleKg ? (commonExpenses * saleKg) / totalSaleKg : 0)
-    : fullExpense;
+  // General expenses are shared by handled volume (purchase kg + sale kg), an understandable
+  // and deterministic method that keeps product totals equal to the depot total.
+  const allocatedGeneral = product
+    ? directGeneral + (totalHandledKg ? sharedGeneral * handledKg / totalHandledKg : 0)
+    : generalTotal;
   const products = coldProducts(state).filter(matches);
   let costOfGoods = 0,
+    acquisitionExpenseInCogs = 0,
     stockKg = 0;
   for (const name of products) {
     const events = [
@@ -210,6 +220,10 @@ export function coldSummary(
         lastAverage = unit;
       }
     }
+    const acquiredBeforeEnd = state.purchases.filter((x)=>active(x) && key(x.product)===key(name) && new Date(x.dateTime).getTime()<end).reduce((s,x)=>s+x.kg,0);
+    const acquisitionCostsBeforeEnd = state.expenses.filter((x)=>(x.scope||"general")==="purchase" && key(x.product)===key(name) && new Date(x.dateTime).getTime()<end).reduce((s,x)=>s+x.amount,0);
+    const soldInPeriod = state.sales.filter((x)=>active(x) && key(x.product)===key(name) && within(x)).reduce((s,x)=>s+x.kg,0);
+    acquisitionExpenseInCogs += acquiredBeforeEnd ? (acquisitionCostsBeforeEnd / acquiredBeforeEnd) * soldInPeriod : 0;
     stockKg += available;
   }
   return {
@@ -217,17 +231,25 @@ export function coldSummary(
     buyKg,
     buyCost,
     averageBuy: buyKg ? buyCost / buyKg : 0,
+    purchaseExpenses,
+    realBuyCost: buyCost + purchaseExpenses,
+    realAverageBuy: buyKg ? (buyCost + purchaseExpenses) / buyKg : 0,
     saleCount: sales.length,
     saleKg,
     revenue,
     averageSale: saleKg ? revenue / saleKg : 0,
-    expenses: allocatedExpenses,
+    saleExpenses,
+    saleExpensePerKg: saleKg ? saleExpenses / saleKg : 0,
+    generalExpenses: allocatedGeneral,
+    expenses: purchaseExpenses + saleExpenses + allocatedGeneral,
     fireKg,
     stockKg,
     costOfGoods,
-    profit: revenue - costOfGoods - allocatedExpenses,
+    grossProfit: revenue - costOfGoods - acquisitionExpenseInCogs,
+    acquisitionExpenseInCogs,
+    profit: revenue - costOfGoods - acquisitionExpenseInCogs - saleExpenses - allocatedGeneral,
     profitPerKg: saleKg
-      ? (revenue - costOfGoods - allocatedExpenses) / saleKg
+      ? (revenue - costOfGoods - acquisitionExpenseInCogs - saleExpenses - allocatedGeneral) / saleKg
       : 0,
   };
 }

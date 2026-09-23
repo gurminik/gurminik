@@ -27,6 +27,7 @@ const fixture = normalizeBackupPayload({
     shipments: [{ id: id(10), shipment_no: "SVK-1" }],
   },
   coldStorage: {
+    products: [{ id: id(15), name: "Limon", is_active: true }],
     purchases: [{ id: id(11), product_name: "Limon", supplier_name: "Murat", quantity_kg: 50, unit_buy_price: 11 }],
     sales: [{ id: id(12), product_name: "Limon", buyer_name: "GETA", quantity_kg: 30, unit_sale_price: 19 }],
     expenses: [{ id: id(13), title: "Fire", category: "Fire", amount: 100, product_name: "Limon", loss_kg: 2 }],
@@ -50,6 +51,7 @@ assert.deepEqual(backupSummary(fixture), {
   coldSales: 1,
   coldExpenses: 1,
   coldFire: 1,
+  coldProducts: 1,
 });
 
 const legacy = normalizeBackupPayload([{ id: id(20), person: "Ali" }]);

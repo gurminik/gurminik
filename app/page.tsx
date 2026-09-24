@@ -2373,7 +2373,19 @@ export default function Home() {
     setDialog("purchase");
   }
   function openSale(productId: string) {
-    setSelectedProduct(productId);
+    const activeProducts = state.products.filter((product) => product.isActive !== false);
+    const rememberedId = session?.user.id
+      ? localStorage.getItem(mobileLastProductKey(session.user.id, "sale"))
+      : null;
+    const lastOwnProduct = state.sales.find(
+      (row) => row.status !== "cancelled" && row.createdBy === session?.user.id,
+    )?.productId;
+    setSelectedProduct(
+      productId ||
+      activeProducts.find((product) => product.id === rememberedId)?.id ||
+      activeProducts.find((product) => product.id === lastOwnProduct)?.id ||
+      activeProducts[0]?.id || "",
+    );
     setDialog("sale");
   }
   function requestFinanceUnlock() {
@@ -4236,11 +4248,7 @@ function SalesList({
         {permission.can_create && (
           <Button
             onClick={() =>
-              openSale(
-                productFilter ||
-                  products.find((p) => p.isActive !== false)?.id ||
-                  "",
-              )
+              openSale(productFilter)
             }
             disabled={!products.some((p) => p.isActive !== false)}
           >
@@ -7084,20 +7092,13 @@ function EntryDialog({
           : crypto.randomUUID();
     if ((action === "addPurchase" || action === "addSale") && !data.productId)
       data.productId = productId;
-    if (
-      compactMobile &&
-      (action === "addPurchase" || action === "addSale") &&
-      data.productId
-    )
-      localStorage.setItem(
-        mobileLastProductKey(
-          userId,
-          action === "addPurchase" ? "purchase" : "sale",
-        ),
-        String(data.productId),
-      );
     try {
       await mutate(action, data);
+      if ((action === "addPurchase" || action === "addSale") && data.productId)
+        localStorage.setItem(
+          mobileLastProductKey(userId, action === "addPurchase" ? "purchase" : "sale"),
+          String(data.productId),
+        );
       onSaved?.(action);
       close();
     } catch (error) {
@@ -7182,10 +7183,7 @@ function EntryDialog({
     >
       <DialogContent
         onOpenAutoFocus={(event) => {
-          if (
-            compactMobile &&
-            ["purchase", "sale"].includes(type || "")
-          )
+          if (["purchase", "sale"].includes(type || ""))
             event.preventDefault();
         }}
         onPointerDownOutside={(event) => {
@@ -7580,8 +7578,7 @@ function PurchaseEntryForm({
   }
   function productChanged(id: string) {
     setSelectedProduct(id);
-    if (compactMobile)
-      localStorage.setItem(mobileLastProductKey(userId, "purchase"), id);
+    localStorage.setItem(mobileLastProductKey(userId, "purchase"), id);
     const remembered = lastPrice(id);
     setPrice(remembered === undefined ? "" : String(remembered));
   }
@@ -7724,8 +7721,7 @@ function SaleEntryForm({
   }
   function changeProduct(id: string) {
     setSelectedProduct(id);
-    if (compactMobile)
-      localStorage.setItem(mobileLastProductKey(userId, "sale"), id);
+    localStorage.setItem(mobileLastProductKey(userId, "sale"), id);
     setPrice(String(latestSalePrice(state.sales, id, buyer) ?? ""));
   }
   function changeDriver(value: string) {

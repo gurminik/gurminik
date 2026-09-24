@@ -73,5 +73,5 @@ for (const token of [
   "revoke all on function public.get_mobile_ranking_rows() from public, anon",
 ]) assert.ok(rankingMigration.includes(token), `Eksik mobil sıralama güvenliği: ${token}`);
 
-assert.ok(worker.includes("gurminik-shell-v16"), "Service worker önbelleği güncellenmedi");
+assert.ok(worker.includes("gurminik-shell-v17"), "Service worker önbelleği güncellenmedi");
 console.log("Sade mobil çalışan modu statik doğrulamaları başarılı.");

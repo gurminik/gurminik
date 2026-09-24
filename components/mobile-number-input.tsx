@@ -50,7 +50,15 @@ export function MobileNumberInput({ className = "", onFocus, ...props }: Props) 
         onClick={() => { if (mobile) { setDraft(ref.current?.value || ""); setOpen(true); } }}
       />
       {mobile && open && createPortal(
-        <div className="gurminik-number-pad-backdrop" role="presentation" onMouseDown={(e)=>{if(e.target===e.currentTarget)setOpen(false)}}>
+        <div
+          className="gurminik-number-pad-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            if (event.target === event.currentTarget) setOpen(false);
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
           <section className="gurminik-number-pad" role="dialog" aria-modal="true" aria-label="Hızlı sayı klavyesi">
             <div className="gurminik-number-pad-value">{draft || "0"}</div>
             <div className="gurminik-number-pad-grid">
@@ -59,7 +67,7 @@ export function MobileNumberInput({ className = "", onFocus, ...props }: Props) 
               <button type="button" onClick={()=>key("0")}>0</button>
               <button type="button" aria-label="Son rakamı sil" onClick={()=>key("back")}><Delete /></button>
             </div>
-            <button type="button" className="gurminik-number-pad-done" onClick={()=>{setOpen(false);ref.current?.blur()}}><Check /> Tamam</button>
+            <button type="button" className="gurminik-number-pad-done" onClick={()=>setOpen(false)}><Check /> Tamam</button>
           </section>
         </div>, document.body)}
     </>

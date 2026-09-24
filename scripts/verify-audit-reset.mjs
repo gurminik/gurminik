@@ -20,5 +20,5 @@ assert.match(migration, /private\.require_gurminik_admin_verification/);
 assert.match(migration, /extensions\.crypt\(input_password, stored_hash\)/);
 assert.doesNotMatch(page, /input_password:\s*["'][^"']+["']/);
 assert.doesNotMatch(migration, /password_hash[^;]+crypt\s*\(\s*["'][^"']+["']/s);
-assert.match(sw, /gurminik-shell-v16/);
+assert.match(sw, /gurminik-shell-v17/);
 console.log("Audit log, RLS, server-side reset, offline epoch and UI safety checks passed.");

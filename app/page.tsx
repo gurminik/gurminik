@@ -328,7 +328,8 @@ const DEFAULT_CONTACT_CATEGORIES = [
 const QUEUE_KEY = "gurminik_pending_operations_v1",
   STATE_CACHE_KEY = "gurminik_state_cache_v1",
   MOBILE_STATE_CACHE_KEY = "gurminik_mobile_state_cache_v1",
-  INTERFACE_MODE_KEY = "gurminik_interface_mode_v1";
+  INTERFACE_MODE_KEY = "gurminik_interface_mode_v1",
+  MOBILE_LAST_PRODUCT_KEY = "gurminik_mobile_last_product_v1";
 const OFFLINE_ACTIONS = new Set([
   "addProduct",
   "addPurchase",
@@ -361,6 +362,10 @@ const OFFLINE_ACTIONS = new Set([
   "addColdCategory",
 ]);
 const queueKey = (userId: string) => `${QUEUE_KEY}:${userId}`;
+const mobileLastProductKey = (
+  userId: string,
+  entryType: "purchase" | "sale",
+) => `${MOBILE_LAST_PRODUCT_KEY}:${userId}:${entryType}`;
 const readQueue = (userId: string): PendingOperation[] => {
   try {
     return userId
@@ -2444,8 +2449,16 @@ export default function Home() {
   }
 
   if (interfaceMode === "mobile" && access.is_active) {
-    const activeProduct = state.products.find((product) => product.isActive !== false);
     const openMobileEntry = (type: "purchase" | "sale") => {
+      const activeProducts = state.products.filter(
+        (product) => product.isActive !== false,
+      );
+      const rememberedProductId = localStorage.getItem(
+        mobileLastProductKey(session.user.id, type),
+      );
+      const activeProduct =
+        activeProducts.find((product) => product.id === rememberedProductId) ||
+        activeProducts[0];
       if (!activeProduct) {
         window.alert("Kayıt girebilmek için yöneticinin önce aktif bir ürün oluşturması gerekiyor.");
         return;
@@ -2649,6 +2662,7 @@ export default function Home() {
           userId={session.user.id}
           financeUnlocked={false}
           unlockFinance={unlockFinance}
+          compactMobile
           onSaved={(action) => {
             setSyncNotice(
               action === "addPurchase"
@@ -6937,6 +6951,7 @@ function EntryDialog({
   financeUnlocked,
   unlockFinance,
   onSaved,
+  compactMobile = false,
 }: {
   type: DialogType;
   close: () => void;
@@ -6951,6 +6966,7 @@ function EntryDialog({
   financeUnlocked: boolean;
   unlockFinance: (password: string) => Promise<boolean>;
   onSaved?: (action: string) => void;
+  compactMobile?: boolean;
 }) {
   const [dialogError, setDialogError] = useState(""),
     [detailUnlocking, setDetailUnlocking] = useState(false),
@@ -6972,6 +6988,18 @@ function EntryDialog({
           : crypto.randomUUID();
     if ((action === "addPurchase" || action === "addSale") && !data.productId)
       data.productId = productId;
+    if (
+      compactMobile &&
+      (action === "addPurchase" || action === "addSale") &&
+      data.productId
+    )
+      localStorage.setItem(
+        mobileLastProductKey(
+          userId,
+          action === "addPurchase" ? "purchase" : "sale",
+        ),
+        String(data.productId),
+      );
     try {
       await mutate(action, data);
       onSaved?.(action);
@@ -7057,6 +7085,21 @@ function EntryDialog({
       }}
     >
       <DialogContent
+        onOpenAutoFocus={(event) => {
+          if (
+            compactMobile &&
+            ["purchase", "sale"].includes(type || "")
+          )
+            event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          const target = event.detail.originalEvent.target;
+          if (
+            target instanceof Element &&
+            target.closest(".gurminik-number-pad-backdrop")
+          )
+            event.preventDefault();
+        }}
         className={
           type === "detail"
             ? "gurminik-dialog max-h-[90vh] overflow-auto sm:max-w-5xl"
@@ -7103,6 +7146,8 @@ function EntryDialog({
           <PurchaseEntryForm
             state={state}
             productId={productId}
+            userId={userId}
+            compactMobile={compactMobile}
             submit={submit}
             saving={saving}
           />
@@ -7175,6 +7220,7 @@ function EntryDialog({
             state={state}
             productId={productId}
             userId={userId}
+            compactMobile={compactMobile}
             submit={submit}
             saving={saving}
           />
@@ -7404,11 +7450,15 @@ function EntryDialog({
 function PurchaseEntryForm({
   state,
   productId,
+  userId,
+  compactMobile,
   submit,
   saving,
 }: {
   state: State;
   productId: string;
+  userId: string;
+  compactMobile: boolean;
   submit: (e: FormEvent<HTMLFormElement>, a: string) => void;
   saving: boolean;
 }) {
@@ -7429,6 +7479,8 @@ function PurchaseEntryForm({
   }
   function productChanged(id: string) {
     setSelectedProduct(id);
+    if (compactMobile)
+      localStorage.setItem(mobileLastProductKey(userId, "purchase"), id);
     const remembered = lastPrice(id);
     setPrice(remembered === undefined ? "" : String(remembered));
   }
@@ -7532,12 +7584,14 @@ function SaleEntryForm({
   state,
   productId,
   userId,
+  compactMobile,
   submit,
   saving,
 }: {
   state: State;
   productId: string;
   userId: string;
+  compactMobile: boolean;
   submit: (e: FormEvent<HTMLFormElement>, a: string) => void;
   saving: boolean;
 }) {
@@ -7567,6 +7621,8 @@ function SaleEntryForm({
   }
   function changeProduct(id: string) {
     setSelectedProduct(id);
+    if (compactMobile)
+      localStorage.setItem(mobileLastProductKey(userId, "sale"), id);
     setPrice(String(latestSalePrice(state.sales, id, buyer) ?? ""));
   }
   function changeDriver(value: string) {

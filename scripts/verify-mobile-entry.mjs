@@ -12,6 +12,7 @@ for (const token of [
   "rememberedProductId",
   "onOpenAutoFocus",
   "onPointerDownOutside",
+  "onFocusOutside",
   'target.closest(".gurminik-number-pad-backdrop")',
   "compactMobile",
 ]) assert.ok(page.includes(token), "Eksik mobil giriş koruması: " + token);
@@ -19,11 +20,15 @@ for (const token of [
 for (const token of [
   'type="button"',
   "onPointerDown",
+  "onTouchStart",
+  "onTouchEnd",
   "event.stopPropagation()",
-  'onClick={(event) => event.stopPropagation()}',
   'onClick={()=>setOpen(false)}',
   'if (!current.includes("."))',
 ]) assert.ok(keypad.includes(token), "Eksik sayı klavyesi koruması: " + token);
+
+assert.match(page, /Satış miktarı \(kg\)[\s\S]{0,180}<MobileNumberInput name="kg"/);
+assert.match(readFileSync("app/globals.css", "utf8"), /\.gurminik-number-pad-backdrop\{[^}]*pointer-events:auto/);
 
 assert.ok(
   !keypad.includes("ref.current?.blur()"),

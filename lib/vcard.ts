@@ -55,10 +55,10 @@ function splitProperty(line:string){
   return null;
 }
 
-function propertyValue(header:string,value:string){
+function propertyValue(header:string,value:string,unescape=true){
   const charset=header.match(/(?:^|;)CHARSET=([^;:]+)/i)?.[1]||"utf-8";
   const decoded=/(?:^|;)ENCODING=QUOTED-PRINTABLE(?:;|$)/i.test(header)?decodeQuotedPrintable(value,charset):value;
-  return unescapeVCard(decoded);
+  return unescape?unescapeVCard(decoded):decoded.trim();
 }
 
 export function normalizePhone(value:string){
@@ -78,12 +78,15 @@ export function formatPhone(value:string){
 }
 
 export function decodeVCardBuffer(buffer:ArrayBuffer){
+  const bytes=new Uint8Array(buffer);
+  if(bytes[0]===0xff&&bytes[1]===0xfe)return new TextDecoder("utf-16le").decode(buffer);
+  if(bytes[0]===0xfe&&bytes[1]===0xff)return new TextDecoder("utf-16be").decode(buffer);
   try{return new TextDecoder("utf-8",{fatal:true}).decode(buffer)}
   catch{try{return new TextDecoder("windows-1254").decode(buffer)}catch{return new TextDecoder().decode(buffer)}}
 }
 
 export function parseVCard(source:string):VCardParseResult{
-  const normalized=source.replace(/\r\n?/g,"\n").replace(/=\n(?=[^\s])/g,"");
+  const normalized=source.replace(/^\uFEFF/,"").replace(/\r\n?/g,"\n").replace(/=\n(?=[^\s])/g,"");
   const physical=normalized.split("\n"),lines:string[]=[];
   for(const line of physical){
     if(/^[ \t]/.test(line)&&lines.length)lines[lines.length-1]+=line.slice(1);
@@ -103,7 +106,7 @@ export function parseVCard(source:string):VCardParseResult{
       const pair=splitProperty(line);if(!pair)continue;
       const [header,rawValue]=pair,base=(header.split(";",1)[0].split(".").pop()||"").toUpperCase();
       if(base==="FN")formattedName=propertyValue(header,rawValue);
-      else if(base==="N")structuredName=propertyValue(header,rawValue);
+      else if(base==="N")structuredName=propertyValue(header,rawValue,false);
       else if(base==="TEL")phones.push(propertyValue(header,rawValue).replace(/^tel:/i,"").split(";")[0]);
     }
     if(!formattedName&&structuredName){

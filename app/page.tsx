@@ -2125,7 +2125,12 @@ export default function Home() {
         )
         .filter(Boolean),
     );
-    const pending = rows.filter((row) => !existingKeys.has(row.phoneKey));
+    const seen = new Set(existingKeys);
+    const pending = rows.filter((row) => {
+      if (!row.phoneKey || seen.has(row.phoneKey)) return false;
+      seen.add(row.phoneKey);
+      return true;
+    });
     if (!pending.length) return { added: 0, skipped: rows.length };
     const payload = pending.map((row) => ({
       id: crypto.randomUUID(),
@@ -2135,21 +2140,40 @@ export default function Home() {
       contact_type: "Diğer",
       notes: row.unnamed ? "vCard aktarımı · İsimsiz kayıt" : "vCard aktarımı",
     }));
-    const inserted = await supabase
-      .from("contacts")
-      .upsert(payload, {
-        onConflict: "owner_id,phone_normalized",
-        ignoreDuplicates: true,
-      })
-      .select("id");
-    if (inserted.error) throw inserted.error;
-    const added = inserted.data?.length || 0;
-    await supabase.rpc("log_gurminik_contact_import", {
+    let added = 0;
+    const insertedIds: string[] = [];
+    // Small batches stay below PostgREST's response limit for large phonebooks.
+    for (let start = 0; start < payload.length; start += 100) {
+      const inserted = await supabase
+        .from("contacts")
+        .upsert(payload.slice(start, start + 100), {
+          onConflict: "owner_id,phone_normalized",
+          ignoreDuplicates: true,
+        })
+        .select("id");
+      if (inserted.error) throw new Error(`Rehber kaydı başarısız (${inserted.error.code || "DB"}): ${inserted.error.message}`);
+      insertedIds.push(...(inserted.data || []).map((item) => item.id));
+      added += inserted.data?.length || 0;
+    }
+    const verified = await fetchAllRows((from, to) =>
+      supabase.from("contacts")
+        .select("id,name,phone,contact_type,notes,created_at")
+        .order("name").order("id").range(from, to),
+    );
+    if (verified.error) throw new Error(`Aktarılan kişiler okunamadı: ${verified.error.message}`);
+    const persisted = new Set(verified.data.map((item) => item.id));
+    if (insertedIds.some((id) => !persisted.has(id)))
+      throw new Error("Bazı numaralar buluta kaydedildi fakat listeden doğrulanamadı. Lütfen yeniden yükleyip kontrol edin.");
+    setState((previous) => ({...previous, contacts: verified.data.map((item) => ({
+      id: item.id, name: item.name, phone: item.phone || "",
+      category: item.contact_type || "Diğer", note: item.notes || "", createdAt: item.created_at,
+    }))}));
+    const logged = await supabase.rpc("log_gurminik_contact_import", {
       added_count: added,
       skipped_count: rows.length - added,
     });
-    await reload();
-    setSyncNotice("Rehber kişileri bulutla senkronize edildi.");
+    if (logged.error) setSyncNotice("Numaralar kaydedildi; işlem geçmişi kaydı oluşturulamadı.");
+    else setSyncNotice("Rehber kişileri bulutla senkronize edildi.");
     return { added, skipped: rows.length - added };
   }
   async function login(e: FormEvent) {
@@ -5477,8 +5501,11 @@ function Contacts({
   async function chooseVCard(file: File) {
     setImportMessage("");
     try {
-      const parsed = parseVCard(decodeVCardBuffer(await file.arrayBuffer()));
+      const contents = decodeVCardBuffer(await file.arrayBuffer());
+      if (!contents.trim()) throw new Error("Seçilen vCard dosyası boş veya okunamadı.");
+      const parsed = parseVCard(contents);
       if (!parsed.cards) throw new Error("Dosyada vCard kaydı bulunamadı.");
+      if (!parsed.contacts.length) throw new Error(`${parsed.cards} vCard bulundu ancak geçerli telefon numarası çıkarılamadı. Dosya biçimini kontrol edin.`);
       setFileName(file.name);
       setPreviewRows(parsed.contacts);
       setInvalid(parsed.invalid);
@@ -5491,6 +5518,7 @@ function Contacts({
         ),
       );
       setPreviewOpen(true);
+      setImportMessage(`${parsed.cards} vCard okundu; ${parsed.contacts.length} geçerli numara bulundu.`);
     } catch (error) {
       setImportMessage(
         error instanceof Error ? error.message : "VCF dosyası okunamadı.",
@@ -5517,11 +5545,13 @@ function Contacts({
     setImporting(true);
     try {
       const result = await importContacts(selectedRows);
-      setPreviewOpen(false);
       setImportMessage(
-        `${result.added} numara eklendi · ${result.skipped + alreadyExisting + fileDuplicates} mükerrer atlandı · ${invalid} hatalı kayıt bulundu.`,
+        `${result.added} kişi başarıyla eklendi. ${result.skipped + alreadyExisting + fileDuplicates} numara mükerrer olduğu için atlandı. ${invalid} numara hatalıydı.`,
       );
+      setCategory("");
+      setSearch("");
       setPage(1);
+      setPreviewOpen(false);
     } catch (error) {
       setImportMessage(
         error instanceof Error ? error.message : "Rehber buluta aktarılamadı.",
@@ -5595,9 +5625,10 @@ function Contacts({
                 type="file"
                 accept=".vcf,text/vcard,text/x-vcard"
                 onChange={async (e) => {
-                  const file = e.target.files?.[0];
+                  const input = e.currentTarget;
+                  const file = input.files?.[0];
+                  input.value = "";
                   if (file) await chooseVCard(file);
-                  e.currentTarget.value = "";
                 }}
               />
             </label>
@@ -5692,7 +5723,7 @@ function Contacts({
         </Table>
         <Pager page={page} setPage={setPage} total={filtered.length} />
       </div>
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <Dialog open={previewOpen} onOpenChange={(open) => { if (!importing) setPreviewOpen(open); }}>
         <DialogContent className="gurminik-vcard-dialog sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Rehber aktarım önizlemesi</DialogTitle>
@@ -5712,6 +5743,7 @@ function Contacts({
               <strong>{invalid}</strong> hatalı
             </span>
           </div>
+          {importMessage && <p role="status" className="gurminik-import-result">{importMessage}</p>}
           <div className="gurminik-vcard-toolbar">
             <Button
               type="button"
@@ -5766,6 +5798,7 @@ function Contacts({
               type="button"
               variant="outline"
               onClick={() => setPreviewOpen(false)}
+              disabled={importing}
             >
               Vazgeç
             </Button>
@@ -7100,6 +7133,11 @@ function EntryDialog({
           )
             event.preventDefault();
         }}
+        onFocusOutside={(event) => {
+          const target = event.target;
+          if (target instanceof Element && target.closest(".gurminik-number-pad-backdrop"))
+            event.preventDefault();
+        }}
         className={
           type === "detail"
             ? "gurminik-dialog max-h-[90vh] overflow-auto sm:max-w-5xl"
@@ -7688,7 +7726,11 @@ function SaleEntryForm({
           required
         />
       </label>
-      <Field name="kg" label="Satış miktarı (kg)" type="number" />
+      <label className="grid gap-2 text-sm font-bold">
+        Satış miktarı (kg)
+        <MobileNumberInput name="kg" step="0.01" required
+          className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm" />
+      </label>
       <label className="grid gap-2 text-sm font-bold">
         Satış fiyatı (TL/kg)
         <MobileNumberInput

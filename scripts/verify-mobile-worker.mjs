@@ -28,12 +28,21 @@ for (const token of [
   "admin_set_gurminik_user_access_v2",
   '"get_mobile_ranking_rows"',
   "onFavoriteChanged",
+  "INTERFACE_MODE_KEY",
+  'type InterfaceMode = "normal" | "mobile"',
+  'interfaceMode === "mobile"',
+  'changeInterfaceMode("mobile")',
+  'changeInterfaceMode("normal")',
+  "Mobil Sürüme Geç",
+  "Mobil Sürümden Çık",
+  "if (!access.effective_mobile_mode)",
 ]) assert.ok(page.includes(token), `Eksik mobil uygulama işareti: ${token}`);
 
 for (const token of [
   ".gurminik-worker-grid",
   "grid-template-columns:repeat(3",
   ".gurminik-worker-grid>button.is-logout",
+  ".gurminik-worker-grid>button.is-interface-exit",
   ".gurminik-mobile-ranking",
   "grid-template-columns:repeat(3,minmax(0,1fr));gap:6px",
 ]) assert.ok(styles.includes(token), `Eksik mobil stil: ${token}`);
@@ -64,5 +73,5 @@ for (const token of [
   "revoke all on function public.get_mobile_ranking_rows() from public, anon",
 ]) assert.ok(rankingMigration.includes(token), `Eksik mobil sıralama güvenliği: ${token}`);
 
-assert.ok(worker.includes("gurminik-shell-v15"), "Service worker önbelleği güncellenmedi");
+assert.ok(worker.includes("gurminik-shell-v16"), "Service worker önbelleği güncellenmedi");
 console.log("Sade mobil çalışan modu statik doğrulamaları başarılı.");

@@ -28,6 +28,7 @@ import {
   LogOut,
   Menu,
   MessageCircle,
+  MonitorUp,
   Pencil,
   Phone,
   PhoneCall,
@@ -38,6 +39,7 @@ import {
   Search,
   ShieldCheck,
   ShoppingCart,
+  Smartphone,
   Star,
   Trash2,
   Trophy,
@@ -230,6 +232,7 @@ type ModuleId =
   | "backup"
   | "activity_logs";
 type View = ModuleId | "authorization";
+type InterfaceMode = "normal" | "mobile";
 type Permission = {
   can_view: boolean;
   can_create: boolean;
@@ -324,7 +327,8 @@ const DEFAULT_CONTACT_CATEGORIES = [
 ];
 const QUEUE_KEY = "gurminik_pending_operations_v1",
   STATE_CACHE_KEY = "gurminik_state_cache_v1",
-  MOBILE_STATE_CACHE_KEY = "gurminik_mobile_state_cache_v1";
+  MOBILE_STATE_CACHE_KEY = "gurminik_mobile_state_cache_v1",
+  INTERFACE_MODE_KEY = "gurminik_interface_mode_v1";
 const OFFLINE_ACTIONS = new Set([
   "addProduct",
   "addPurchase",
@@ -433,6 +437,9 @@ export default function Home() {
   const [view, setView] = useState<View>("dashboard"),
     [mobile, setMobile] = useState(false),
     [query, setQuery] = useState("");
+  const [interfaceMode, setInterfaceMode] = useState<InterfaceMode | null>(
+    null,
+  );
   const [dialog, setDialog] = useState<DialogType>(null),
     [selectedProduct, setSelectedProduct] = useState<string>(""),
     [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null),
@@ -1060,6 +1067,16 @@ export default function Home() {
           const nextAccess = await fetchAccess();
           if (!active) return;
           setAccess(nextAccess);
+          const rememberedMode = localStorage.getItem(
+            `${INTERFACE_MODE_KEY}:${next.user.id}`,
+          );
+          setInterfaceMode(
+            rememberedMode === "mobile" || rememberedMode === "normal"
+              ? rememberedMode
+              : nextAccess.mobile_mode
+                ? "mobile"
+                : "normal",
+          );
           setAccessReady(true);
           if (
             nextAccess.is_active &&
@@ -1083,6 +1100,7 @@ export default function Home() {
           }
         } catch (e) {
           setAccess(NO_ACCESS);
+          setInterfaceMode("normal");
           setAccessReady(true);
           setState(EMPTY);
           setCold(EMPTY_COLD);
@@ -1090,6 +1108,7 @@ export default function Home() {
         }
       } else {
         setAccess(NO_ACCESS);
+        setInterfaceMode(null);
         setAccessReady(true);
         setState(EMPTY);
         setCold(EMPTY_COLD);
@@ -2302,6 +2321,12 @@ export default function Home() {
         Kullanıcı yetkileri denetleniyor…
       </main>
     );
+  if (!interfaceMode)
+    return (
+      <main className="gurminik-login text-zinc-400">
+        Görünüm hazırlanıyor…
+      </main>
+    );
 
   const live = state.purchases.filter((x) => x.status !== "cancelled");
   const liveSales = state.sales.filter((x) => x.status !== "cancelled");
@@ -2324,6 +2349,28 @@ export default function Home() {
   }
   function requestFinanceUnlock() {
     setDialog("unlockFinance");
+  }
+  function changeInterfaceMode(nextMode: InterfaceMode) {
+    const userId = session?.user.id;
+    if (!userId) return;
+    if (
+      dialog &&
+      !window.confirm(
+        "Kaydedilmemiş form bilgileri kaybolabilir. Görünüm değiştirilsin mi?",
+      )
+    )
+      return;
+    localStorage.setItem(
+      `${INTERFACE_MODE_KEY}:${userId}`,
+      nextMode,
+    );
+    setInterfaceMode(nextMode);
+    setDialog(null);
+    setSelectedPurchase(null);
+    setSelectedSale(null);
+    setMobile(false);
+    setQuery("");
+    setView("dashboard");
   }
   function openActivityTarget(row: ActivityLog) {
     const targetModule = row.module as ModuleId;
@@ -2396,7 +2443,7 @@ export default function Home() {
     setSyncNotice("Uygulama başarıyla sıfırlandı. Yeni sezon kayıtlarına başlayabilirsiniz.");
   }
 
-  if (access.effective_mobile_mode && access.is_active) {
+  if (interfaceMode === "mobile" && access.is_active) {
     const activeProduct = state.products.find((product) => product.isActive !== false);
     const openMobileEntry = (type: "purchase" | "sale") => {
       if (!activeProduct) {
@@ -2407,6 +2454,10 @@ export default function Home() {
       else openSale(activeProduct.id);
     };
     const openMobileRanking = async () => {
+      if (!access.effective_mobile_mode) {
+        setView("ranking");
+        return;
+      }
       setLoading(true);
       setError("");
       const { data, error: rankingError } = await supabase.rpc(
@@ -2525,6 +2576,12 @@ export default function Home() {
                     </button>
                   );
                 })}
+                <button
+                  className="is-interface-exit"
+                  onClick={() => changeInterfaceMode("normal")}
+                >
+                  <MonitorUp /><span>Mobil Sürümden Çık</span>
+                </button>
                 <button
                   className="is-logout"
                   onClick={() => {
@@ -2686,6 +2743,15 @@ export default function Home() {
             >
               <History className="size-4" />
               İşlem Geçmişi
+            </button>
+          )}
+          {access.is_active && (
+            <button
+              onClick={() => changeInterfaceMode("mobile")}
+              className="gurminik-logout gurminik-interface-switch"
+            >
+              <Smartphone className="size-4" />
+              Mobil Sürüme Geç
             </button>
           )}
           <button

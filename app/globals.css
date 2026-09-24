@@ -2344,7 +2344,6 @@ select {
 .gurminik-number-pad-grid button,.gurminik-number-pad-done{min-height:58px;border:0;border-radius:14px;background:#292d31;color:#fff;font-size:1.25rem;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;touch-action:manipulation}
 .gurminik-number-pad-grid button:active{background:#4a2b18;transform:scale(.98)}
 .gurminik-number-pad-done{width:100%;margin-top:10px;background:#168254}
-@media (min-width:821px) and (pointer:fine){.gurminik-number-pad-backdrop{display:none}}
 .cold-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .cold-product-manager{display:grid;gap:14px}.cold-product-manager h3{margin:0}.cold-product-manager span{color:#6b7280}
 .cold-product-chips{display:flex;gap:8px;flex-wrap:wrap}.cold-product-chips>span{display:flex;align-items:center;gap:6px;border:1px solid #d9d5cf;border-radius:999px;padding:7px 10px;background:#fff;color:#191919;font-weight:750}.cold-product-chips button{border:0;background:transparent;color:#9a3412;padding:2px;display:flex}

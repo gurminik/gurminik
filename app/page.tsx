@@ -7579,6 +7579,7 @@ function PurchaseEntryForm({
         Miktar (kg)
         <MobileNumberInput
           name="kg"
+          forceKeypad={compactMobile}
           step="0.01"
           className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm"
           value={amount}
@@ -7590,6 +7591,7 @@ function PurchaseEntryForm({
         Alış fiyatı (TL/kg)
         <MobileNumberInput
           name="buyPrice"
+          forceKeypad={compactMobile}
           step="0.01"
           className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm"
           value={price}
@@ -7728,13 +7730,14 @@ function SaleEntryForm({
       </label>
       <label className="grid gap-2 text-sm font-bold">
         Satış miktarı (kg)
-        <MobileNumberInput name="kg" step="0.01" required
+        <MobileNumberInput name="kg" step="0.01" required forceKeypad={compactMobile}
           className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm" />
       </label>
       <label className="grid gap-2 text-sm font-bold">
         Satış fiyatı (TL/kg)
         <MobileNumberInput
           name="sellPrice"
+          forceKeypad={compactMobile}
           step="0.01"
           min="0"
           className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none md:text-sm"

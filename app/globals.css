@@ -1086,6 +1086,18 @@ select {
   height: 14px;
 }
 
+.gurminik-contact-cards { display: grid; gap: 10px; min-width: 0; }
+.gurminik-contact-card { display: grid; gap: 11px; min-width: 0; padding: 16px; border: 1px solid #dededa; border-radius: 16px; background: #fafaf9; color: #18181b; }
+.gurminik-contact-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+.gurminik-contact-card-heading strong { min-width: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.35; font-weight: 900; color: #18181b; }
+.gurminik-contact-card-heading .gurminik-contact-badge { flex: none; }
+.gurminik-contact-card .gurminik-contact-actions { min-width: 0; flex-wrap: wrap; }
+.gurminik-contact-card .gurminik-contact-actions a { min-width: 0; overflow-wrap: anywhere; }
+.gurminik-contact-card p { color: #52525b; overflow-wrap: anywhere; font-size: 13px; }
+.gurminik-contact-card > button { justify-self: end; }
+.gurminik-contact-card-empty { padding: 32px 16px; border-radius: 16px; background: #fafaf9; color: #52525b; text-align: center; }
+.gurminik-quick-favorite-dialog { max-height: calc(100dvh - 24px); overflow-y: auto; }
+
 .gurminik-privacy-note {
   display: flex;
   align-items: flex-start;
@@ -1690,6 +1702,7 @@ select {
   border: 1px solid #dededa;
   border-radius: 16px;
   background: #fafaf9;
+  color: #18181b;
   box-shadow: 0 5px 16px rgb(20 20 20 / 4%);
 }
 

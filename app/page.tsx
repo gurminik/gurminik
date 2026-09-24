@@ -2651,6 +2651,7 @@ export default function Home() {
               mutate={mutate}
               importContacts={importVCardContacts}
               permission={permissionFor("contacts")}
+              compactMobile
             />
           )}
           {view === "ranking" && canView("ranking") && (
@@ -4851,6 +4852,7 @@ function Favorites({
   compactMobile?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string>(""),
+    [quickOpen, setQuickOpen] = useState(false),
     [message, setMessage] = useState(""),
     [sort, setSort] = useState<"weight" | "recent" | "name">(() => {
       const saved =
@@ -4945,6 +4947,7 @@ function Favorites({
                 onClick={() => {
                   setSelectedId(item.id);
                   setMessage("");
+                  if (compactMobile && purchasePermission.can_create) setQuickOpen(true);
                 }}
               >
                 <span className="gurminik-favorite-star">
@@ -4996,7 +4999,7 @@ function Favorites({
           Sıralamalar ekranından kişileri favorilere ekleyebilirsiniz.
         </div>
       )}
-      {selected && purchasePermission.can_create && (
+      {selected && purchasePermission.can_create && !compactMobile && (
         <QuickFavoritePurchase
           key={selected.id}
           favorite={selected}
@@ -5007,6 +5010,39 @@ function Favorites({
           }
         />
       )}{" "}
+      {selected && purchasePermission.can_create && compactMobile && (
+        <Dialog open={quickOpen} onOpenChange={setQuickOpen}>
+          <DialogContent
+            className="gurminik-quick-favorite-dialog"
+            onOpenAutoFocus={(event) => event.preventDefault()}
+            onPointerDownOutside={(event) => {
+              const target = event.detail.originalEvent.target;
+              if (target instanceof Element && target.closest(".gurminik-number-pad-backdrop")) event.preventDefault();
+            }}
+            onFocusOutside={(event) => {
+              const target = event.target;
+              if (target instanceof Element && target.closest(".gurminik-number-pad-backdrop")) event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>{selected.person} · Hızlı alış</DialogTitle>
+              <DialogDescription>KG bilgisini girip alış kaydını oluşturun.</DialogDescription>
+            </DialogHeader>
+            <QuickFavoritePurchase
+              key={selected.id}
+              favorite={selected}
+              state={state}
+              mutate={mutate}
+              userId={userId}
+              compactMobile
+              onSaved={() => {
+                setMessage(selected.person + " için alış kaydı buluta kaydedildi.");
+                setQuickOpen(false);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
       {selected && !purchasePermission.can_create && (
         <div className="gurminik-permission-error">
           Hızlı alış kaydetmek için “Tüm Alışlar → Ekle” yetkisi gereklidir.
@@ -5021,11 +5057,15 @@ function QuickFavoritePurchase({
   state,
   mutate,
   onSaved,
+  userId,
+  compactMobile = false,
 }: {
   favorite: Favorite;
   state: State;
   mutate: (a: string, d: Record<string, unknown>) => Promise<void>;
   onSaved: () => void;
+  userId?: string;
+  compactMobile?: boolean;
 }) {
   const submitLock = useRef(false),
     [saving, setSaving] = useState(false),
@@ -5035,7 +5075,11 @@ function QuickFavoritePurchase({
         norm(row.person) === norm(favorite.person) &&
         row.status !== "cancelled",
     ),
+    rememberedProduct = compactMobile && userId && typeof window !== "undefined"
+      ? localStorage.getItem(mobileLastProductKey(userId, "purchase"))
+      : null,
     initialProduct =
+      (rememberedProduct && state.products.some((p) => p.id === rememberedProduct && p.isActive !== false) ? rememberedProduct : null) ||
       favorite.lastProductId ||
       latest?.productId ||
       state.products.find((p) => p.isActive !== false)?.id ||
@@ -5043,15 +5087,16 @@ function QuickFavoritePurchase({
   const [person, setPerson] = useState(favorite.person),
     [plate, setPlate] = useState(favorite.plate || latest?.plate || ""),
     [productId, setProductId] = useState(initialProduct),
-    [price, setPrice] = useState(
-      favorite.lastBuyPrice === null
-        ? String(latest?.buyPrice || "")
-        : String(favorite.lastBuyPrice),
-    ),
+    [price, setPrice] = useState(() => {
+      const matching = state.purchases.find((row) => row.productId === initialProduct && norm(row.person) === norm(favorite.person) && row.status !== "cancelled") ||
+        state.purchases.find((row) => row.productId === initialProduct && row.status !== "cancelled");
+      return matching ? String(matching.buyPrice) : "";
+    }),
     [amount, setAmount] = useState(""),
     [when, setWhen] = useState(localNow());
   function productChanged(id: string) {
     setProductId(id);
+    if (compactMobile && userId) localStorage.setItem(mobileLastProductKey(userId, "purchase"), id);
     const remembered =
       state.purchases.find(
         (row) =>
@@ -5081,6 +5126,7 @@ function QuickFavoritePurchase({
         dateTime: when,
         isPaid: true,
       });
+      if (compactMobile && userId) localStorage.setItem(mobileLastProductKey(userId, "purchase"), productId);
       setAmount("");
       setWhen(localNow());
       onSaved();
@@ -5136,8 +5182,8 @@ function QuickFavoritePurchase({
         </label>
         <label>
           Alış fiyatı (TL/kg)
-          <Input
-            type="number"
+          <MobileNumberInput
+            forceKeypad={compactMobile}
             step="0.01"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
@@ -5146,8 +5192,9 @@ function QuickFavoritePurchase({
         </label>
         <label className="gurminik-quick-kg">
           Yeni miktar (kg)
-          <Input
-            type="number"
+          <MobileNumberInput
+            forceKeypad={compactMobile}
+            focusOnMount={compactMobile}
             step="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
@@ -5422,6 +5469,7 @@ function Contacts({
   mutate,
   importContacts,
   permission,
+  compactMobile = false,
 }: {
   state: State;
   search: string;
@@ -5431,6 +5479,7 @@ function Contacts({
   mutate: (a: string, d: Record<string, unknown>) => Promise<void>;
   importContacts: (rows: ParsedVCardContact[]) => Promise<ContactImportResult>;
   permission: Permission;
+  compactMobile?: boolean;
 }) {
   const [category, setCategory] = useState(""),
     [previewOpen, setPreviewOpen] = useState(false),
@@ -5657,7 +5706,25 @@ function Contacts({
           ))}
         </select>
       </div>
-      <div className="gurminik-table-panel">
+      {compactMobile ? <div className="gurminik-contact-cards" aria-label="Telefon kayıtları">
+        {rows.length ? rows.map((x) => (
+          <article className="gurminik-contact-card" key={x.id}>
+            <div className="gurminik-contact-card-heading">
+              <strong>{x.name}</strong>
+              <span className="gurminik-contact-badge">{x.category}</span>
+            </div>
+            <div className="gurminik-contact-actions">
+              <a href={`tel:${x.phone}`}><PhoneCall />{x.phone}</a>
+              <a href={`https://wa.me/${whatsAppNumber(x.phone)}`} target="_blank" rel="noreferrer"><MessageCircle />WhatsApp</a>
+            </div>
+            {x.note && <p>{x.note}</p>}
+            {permission.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => {
+              if (window.confirm("Bu telefon kaydı silinsin mi?")) void mutate("deleteContact", { id: x.id });
+            }}>Sil</Button>}
+          </article>
+        )) : <div className="gurminik-contact-card-empty">Telefon kaydı bulunamadı.</div>}
+        <Pager page={page} setPage={setPage} total={filtered.length} />
+      </div> : <div className="gurminik-table-panel">
         <Table>
           <TableHeader>
             <TableRow className="bg-zinc-100">
@@ -5722,7 +5789,7 @@ function Contacts({
           </TableBody>
         </Table>
         <Pager page={page} setPage={setPage} total={filtered.length} />
-      </div>
+      </div>}
       <Dialog open={previewOpen} onOpenChange={(open) => { if (!importing) setPreviewOpen(open); }}>
         <DialogContent className="gurminik-vcard-dialog sm:max-w-3xl">
           <DialogHeader>

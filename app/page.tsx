@@ -5180,7 +5180,7 @@ function QuickFavoritePurchase({
               ))}
           </select>
         </label>
-        <label>
+        <label className="gurminik-quick-price">
           Alış fiyatı (TL/kg)
           <MobileNumberInput
             forceKeypad={compactMobile}
@@ -5709,18 +5709,14 @@ function Contacts({
       {compactMobile ? <div className="gurminik-contact-cards" aria-label="Telefon kayıtları">
         {rows.length ? rows.map((x) => (
           <article className="gurminik-contact-card" key={x.id}>
-            <div className="gurminik-contact-card-heading">
-              <strong>{x.name}</strong>
-              <span className="gurminik-contact-badge">{x.category}</span>
+            <strong className="gurminik-contact-card-name">{x.name}</strong>
+            <div className="gurminik-contact-card-actions">
+              <a className="gurminik-contact-card-phone" href={`tel:${x.phone}`} aria-label={`${x.name} kişisini ${x.phone} numarasından ara`}><PhoneCall />{x.phone}</a>
+              <a className="gurminik-contact-card-whatsapp" href={`https://wa.me/${whatsAppNumber(x.phone)}`} target="_blank" rel="noreferrer" aria-label={`${x.name} kişisine WhatsApp üzerinden yaz`}><MessageCircle /><span className="sr-only">WhatsApp</span></a>
+              {permission.can_delete && <Button className="gurminik-contact-card-delete" type="button" size="sm" variant="outline" aria-label={`${x.name} kişisini sil`} onClick={() => {
+                if (window.confirm("Bu telefon kaydı silinsin mi?")) void mutate("deleteContact", { id: x.id });
+              }}>Sil</Button>}
             </div>
-            <div className="gurminik-contact-actions">
-              <a href={`tel:${x.phone}`}><PhoneCall />{x.phone}</a>
-              <a href={`https://wa.me/${whatsAppNumber(x.phone)}`} target="_blank" rel="noreferrer"><MessageCircle />WhatsApp</a>
-            </div>
-            {x.note && <p>{x.note}</p>}
-            {permission.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => {
-              if (window.confirm("Bu telefon kaydı silinsin mi?")) void mutate("deleteContact", { id: x.id });
-            }}>Sil</Button>}
           </article>
         )) : <div className="gurminik-contact-card-empty">Telefon kaydı bulunamadı.</div>}
         <Pager page={page} setPage={setPage} total={filtered.length} />

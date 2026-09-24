@@ -1086,17 +1086,32 @@ select {
   height: 14px;
 }
 
-.gurminik-contact-cards { display: grid; gap: 10px; min-width: 0; }
-.gurminik-contact-card { display: grid; gap: 11px; min-width: 0; padding: 16px; border: 1px solid #dededa; border-radius: 16px; background: #fafaf9; color: #18181b; }
-.gurminik-contact-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
-.gurminik-contact-card-heading strong { min-width: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.35; font-weight: 900; color: #18181b; }
-.gurminik-contact-card-heading .gurminik-contact-badge { flex: none; }
-.gurminik-contact-card .gurminik-contact-actions { min-width: 0; flex-wrap: wrap; }
-.gurminik-contact-card .gurminik-contact-actions a { min-width: 0; overflow-wrap: anywhere; }
-.gurminik-contact-card p { color: #52525b; overflow-wrap: anywhere; font-size: 13px; }
-.gurminik-contact-card > button { justify-self: end; }
+.gurminik-contact-cards { display: grid; gap: 7px; min-width: 0; }
+.gurminik-contact-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; min-width: 0; padding: 11px 13px; border: 1px solid #dededa; border-radius: 13px; background: #fafaf9; color: #18181b; }
+.gurminik-contact-card-name { min-width: 0; overflow-wrap: anywhere; font-size: 15px; line-height: 1.3; font-weight: 850; color: #18181b; }
+.gurminik-contact-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+.gurminik-contact-card-actions a, .gurminik-contact-card-delete { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; border: 1px solid #d9d7d2; border-radius: 9px; background: #fff; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.gurminik-contact-card-phone { gap: 5px; padding: 0 9px; color: #7d451c; }
+.gurminik-contact-card-whatsapp { width: 38px; color: #18794e; }
+.gurminik-contact-card-delete { padding: 0 10px; color: #18181b; }
+.gurminik-contact-card-actions svg { width: 16px; height: 16px; flex: none; }
 .gurminik-contact-card-empty { padding: 32px 16px; border-radius: 16px; background: #fafaf9; color: #52525b; text-align: center; }
 .gurminik-quick-favorite-dialog { max-height: calc(100dvh - 24px); overflow-y: auto; }
+.gurminik-quick-favorite-dialog .gurminik-quick-purchase { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.gurminik-quick-favorite-dialog .gurminik-block-heading { display: none; }
+.gurminik-quick-favorite-dialog .gurminik-form-grid { gap: 12px; }
+.gurminik-quick-favorite-dialog .gurminik-form-grid label { display: grid; gap: 6px; min-width: 0; color: #343434; font-size: 13px; font-weight: 800; }
+.gurminik-quick-favorite-dialog .gurminik-form-grid input, .gurminik-quick-favorite-dialog .gurminik-form-grid select { width: 100%; min-width: 0; min-height: 44px; padding: 9px 12px; border: 1px solid #d7d7d2; border-radius: 10px; background: #fff; color: #18181b; font-size: 16px; font-weight: 650; }
+.gurminik-quick-favorite-dialog .gurminik-quick-kg input { border-color: #b66f35; box-shadow: 0 0 0 2px rgb(182 111 53 / 12%); }
+.gurminik-quick-favorite-dialog .gurminik-form-actions { margin-top: 16px; }
+@media (max-width: 620px) {
+  .gurminik-contact-card { grid-template-columns: 1fr; gap: 7px; }
+  .gurminik-contact-card-actions { justify-content: flex-start; }
+  .gurminik-contact-card-phone { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .gurminik-quick-favorite-dialog { width: calc(100vw - 24px); padding: 18px 16px; }
+  .gurminik-quick-favorite-dialog .gurminik-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gurminik-quick-favorite-dialog .gurminik-form-grid label:not(.gurminik-quick-price):not(.gurminik-quick-kg) { grid-column: 1 / -1; }
+}
 
 .gurminik-privacy-note {
   display: flex;

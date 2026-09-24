@@ -4,9 +4,9 @@ import { ChangeEvent, InputHTMLAttributes, useEffect, useRef, useState } from "r
 import { createPortal } from "react-dom";
 import { Delete, Check } from "lucide-react";
 
-type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode"> & { forceKeypad?: boolean };
+type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode"> & { forceKeypad?: boolean; focusOnMount?: boolean };
 
-export function MobileNumberInput({ className = "", onFocus, onChange, value, defaultValue, forceKeypad = false, ...props }: Props) {
+export function MobileNumberInput({ className = "", onFocus, onChange, value, defaultValue, forceKeypad = false, focusOnMount = false, ...props }: Props) {
   const ref = useRef<HTMLInputElement>(null);
   const [mobile, setMobile] = useState(false);
   const [open, setOpen] = useState(false);
@@ -20,6 +20,11 @@ export function MobileNumberInput({ className = "", onFocus, onChange, value, de
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
+  useEffect(() => {
+    if (!focusOnMount) return;
+    const frame = requestAnimationFrame(() => ref.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [focusOnMount]);
   function setValue(next: string) {
     const input = ref.current;
     if (!input) return;

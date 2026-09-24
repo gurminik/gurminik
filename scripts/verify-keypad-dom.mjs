@@ -8,16 +8,16 @@ const target = './components/.keypad-test.mjs';
 writeFileSync(target,compiled);
 try {
   const window = new Window({url:'http://localhost/'});
-  Object.assign(globalThis,{window,document:window.document,HTMLElement:window.HTMLElement,HTMLInputElement:window.HTMLInputElement,Event:window.Event,FormData:window.FormData,PointerEvent:window.PointerEvent,TouchEvent:window.TouchEvent,MutationObserver:window.MutationObserver,matchMedia:()=>({matches:true,addEventListener(){},removeEventListener(){}}),IS_REACT_ACT_ENVIRONMENT:true});
+  Object.assign(globalThis,{window,document:window.document,HTMLElement:window.HTMLElement,HTMLInputElement:window.HTMLInputElement,Event:window.Event,FormData:window.FormData,PointerEvent:window.PointerEvent,TouchEvent:window.TouchEvent,MutationObserver:window.MutationObserver,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),IS_REACT_ACT_ENVIRONMENT:true});
   const React = await import('react');
   const {createRoot} = await import('react-dom/client');
   const {MobileNumberInput}=await import('../components/.keypad-test.mjs');
   let submitCount=0, controlled='';
   function App(){const [value,setValue]=React.useState('');controlled=value;return React.createElement('form',{onSubmit:e=>{e.preventDefault();submitCount++}},
-    React.createElement('label',{},'Alış KG',React.createElement(MobileNumberInput,{name:'kg',value,onChange:e=>setValue(e.target.value)})),
-    React.createElement('label',{},'Alış Fiyatı',React.createElement(MobileNumberInput,{name:'buyPrice'})),
-    React.createElement('label',{},'Satış KG',React.createElement(MobileNumberInput,{name:'saleKg'})),
-    React.createElement('label',{},'Satış Fiyatı',React.createElement(MobileNumberInput,{name:'sellPrice'})),
+    React.createElement('label',{},'Alış KG',React.createElement(MobileNumberInput,{name:'kg',forceKeypad:true,value,onChange:e=>setValue(e.target.value)})),
+    React.createElement('label',{},'Alış Fiyatı',React.createElement(MobileNumberInput,{name:'buyPrice',forceKeypad:true})),
+    React.createElement('label',{},'Satış KG',React.createElement(MobileNumberInput,{name:'saleKg',forceKeypad:true})),
+    React.createElement('label',{},'Satış Fiyatı',React.createElement(MobileNumberInput,{name:'sellPrice',forceKeypad:true})),
     React.createElement('label',{},'Tarih',React.createElement('input',{name:'date',type:'datetime-local',onFocus:()=>{throw new Error('Takvim odaklandı')}})),
     React.createElement('button',{type:'submit'},'Kaydet'))}
   const host=document.createElement('div'); document.body.append(host);const root=createRoot(host);

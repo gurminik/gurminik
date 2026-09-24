@@ -4,14 +4,15 @@ import { ChangeEvent, InputHTMLAttributes, useEffect, useRef, useState } from "r
 import { createPortal } from "react-dom";
 import { Delete, Check } from "lucide-react";
 
-type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode">;
+type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "inputMode"> & { forceKeypad?: boolean };
 
-export function MobileNumberInput({ className = "", onFocus, onChange, value, defaultValue, ...props }: Props) {
+export function MobileNumberInput({ className = "", onFocus, onChange, value, defaultValue, forceKeypad = false, ...props }: Props) {
   const ref = useRef<HTMLInputElement>(null);
   const [mobile, setMobile] = useState(false);
   const [open, setOpen] = useState(false);
   const [uncontrolled, setUncontrolled] = useState(String(defaultValue ?? ""));
   const current = value === undefined ? uncontrolled : String(value ?? "");
+  const useKeypad = mobile || forceKeypad;
   useEffect(() => {
     const media = matchMedia("(max-width: 820px), (pointer: coarse)");
     const sync = () => setMobile(media.matches);
@@ -40,9 +41,9 @@ export function MobileNumberInput({ className = "", onFocus, onChange, value, de
         {...props}
         ref={ref}
         value={current}
-        type={mobile ? "text" : "number"}
-        inputMode={mobile ? "none" : "decimal"}
-        readOnly={mobile}
+        type={useKeypad ? "text" : "number"}
+        inputMode={useKeypad ? "none" : "decimal"}
+        readOnly={useKeypad}
         className={className}
         onChange={(event) => {
           if (value === undefined) setUncontrolled(event.target.value);
@@ -50,11 +51,11 @@ export function MobileNumberInput({ className = "", onFocus, onChange, value, de
         }}
         onFocus={(event) => {
           onFocus?.(event);
-          if (mobile) setOpen(true);
+          if (useKeypad) setOpen(true);
         }}
-        onClick={() => { if (mobile) setOpen(true); }}
+        onClick={() => { if (useKeypad) setOpen(true); }}
       />
-      {mobile && open && createPortal(
+      {useKeypad && open && createPortal(
         <div
           className="gurminik-number-pad-backdrop"
           role="presentation"

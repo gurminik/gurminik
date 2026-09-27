@@ -109,6 +109,7 @@ import { ColdStorage, ColdReport } from "@/components/cold-storage";
 import { ActivityLogs, type ActivityLog } from "@/components/activity-logs";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { MobileNumberInput } from "@/components/mobile-number-input";
+import { CrateTracking, CrateReturnField } from "@/components/crate-tracking";
 import {
   inRememberedDateRange,
   useRememberedDateRange,
@@ -142,6 +143,8 @@ type Purchase = {
   status: string;
   cancelledAt?: string | null;
   isPaid: boolean;
+  returnedCrates?: number;
+  crateAccountId?: string | null;
   createdAt?: string;
 };
 type Sale = {
@@ -195,8 +198,12 @@ type Favorite = {
   notes: string;
   createdAt?: string;
 };
+type CrateAccount = { id: string; name: string; contactId: string | null; balance: number; updatedAt: string };
+type CrateMovement = { id: string; accountId: string; type: string; delta: number; balanceAfter: number; actor: string; createdAt: string; purchaseId: string | null };
 type ContactImportResult = { added: number; skipped: number };
 type State = {
+  crateAccounts: CrateAccount[];
+  crateMovements: CrateMovement[];
   products: Product[];
   purchases: Purchase[];
   sales: Sale[];
@@ -228,6 +235,7 @@ type ModuleId =
   | "accounts"
   | "favorites"
   | "cold_storage"
+  | "crates"
   | "reports"
   | "backup"
   | "activity_logs";
@@ -267,6 +275,8 @@ type DialogType =
   | null;
 
 const EMPTY: State = {
+  crateAccounts: [],
+  crateMovements: [],
   products: [],
   purchases: [],
   sales: [],
@@ -333,6 +343,7 @@ const QUEUE_KEY = "gurminik_pending_operations_v1",
 const OFFLINE_ACTIONS = new Set([
   "addProduct",
   "addPurchase",
+  "crateChange",
   "editPurchase",
   "togglePurchase",
   "addSale",
@@ -390,6 +401,7 @@ const NAV = [
   ["contacts", "Telefon Numaraları", Phone],
   ["accounts", "Cari Hesap", WalletCards],
   ["cold_storage", "Soğuk Hava", Cloud],
+  ["crates", "Kasa", Boxes],
   ["reports", "Raporlar", CalendarRange],
   ["backup", "Yedekleme", Download],
 ] as const;
@@ -403,6 +415,7 @@ const MODULE_LABELS: Record<ModuleId, string> = {
   contacts: "Telefon Numaraları",
   accounts: "Cari Hesap",
   cold_storage: "Soğuk Hava",
+  crates: "Kasa",
   reports: "Raporlar",
   backup: "Yedekleme",
   activity_logs: "İşlem Geçmişi",
@@ -530,7 +543,7 @@ export default function Home() {
         supabase
           .from("purchases")
           .select(
-            "id,product_id,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,status,cancelled_at,is_paid,created_at",
+            "id,product_id,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,status,cancelled_at,is_paid,returned_crates,crate_account_id,created_at",
           )
           .order("transaction_at", { ascending: false })
           .order("id")
@@ -620,6 +633,7 @@ export default function Home() {
     ].find((x) => x.error);
     if (failed?.error) throw failed.error;
     return {
+      crateAccounts: [], crateMovements: [],
       products: (productsResult.data || []).map((x) => ({
         id: x.id,
         name: x.name,
@@ -638,6 +652,7 @@ export default function Home() {
         status: x.status || "active",
         cancelledAt: x.cancelled_at,
         isPaid: x.is_paid !== false,
+        returnedCrates: Number(x.returned_crates || 0), crateAccountId: x.crate_account_id,
         createdAt: x.created_at,
       })),
       sales: (salesResult.data || []).map((x) => ({
@@ -748,7 +763,7 @@ export default function Home() {
             supabase
               .from("purchases")
               .select(
-                "id,product_id,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,status,cancelled_at,is_paid,created_at",
+                "id,product_id,supplier_name,vehicle_plate,quantity_kg,unit_buy_price,transaction_at,status,cancelled_at,is_paid,returned_crates,crate_account_id,created_at",
               )
               .order("transaction_at", { ascending: false })
               .limit(100),
@@ -807,6 +822,7 @@ export default function Home() {
       if (failed?.error) throw new Error(failed.error.message || "Mobil veriler yüklenemedi.");
 
       return {
+        crateAccounts: [], crateMovements: [],
         products: products.data.map((x) => ({
           id: String(x.id), name: String(x.name), icon: String(x.icon || "●"),
           isActive: x.is_active !== false, createdAt: String(x.created_at || ""),
@@ -817,6 +833,7 @@ export default function Home() {
           buyPrice: Number(x.unit_buy_price), dateTime: String(x.transaction_at),
           status: String(x.status || "active"), cancelledAt: x.cancelled_at ? String(x.cancelled_at) : null,
           isPaid: x.is_paid !== false, createdAt: String(x.created_at || ""),
+          returnedCrates: Number(x.returned_crates || 0), crateAccountId: x.crate_account_id ? String(x.crate_account_id) : null,
         })),
         sales: sales.data.map((x) => ({
           id: String(x.id), productId: String(x.product_id), buyer: String(x.buyer_name || "Alıcı"),
@@ -938,6 +955,18 @@ export default function Home() {
       products: (cp.data || []).map((x)=>({id:x.id,name:x.name,isActive:x.is_active!==false})),
     };
   }, []);
+  const fetchCrates = useCallback(async () => {
+    const [accounts, movements] = await Promise.all([
+      fetchAllRows((from,to) => supabase.from("crate_accounts").select("id,person_name,contact_id,balance,updated_at").order("updated_at",{ascending:false}).order("id").range(from,to)),
+      fetchAllRows((from,to) => supabase.from("crate_movements").select("id,account_id,movement_type,delta,balance_after,actor_name,created_at,purchase_id").order("created_at",{ascending:false}).order("id").range(from,to)),
+    ]);
+    if (accounts.error) throw accounts.error;
+    if (movements.error) throw movements.error;
+    return {
+      crateAccounts: (accounts.data || []).map(x=>({id:x.id,name:x.person_name,contactId:x.contact_id,balance:Number(x.balance),updatedAt:x.updated_at})),
+      crateMovements: (movements.data || []).map(x=>({id:x.id,accountId:x.account_id,type:x.movement_type,delta:Number(x.delta),balanceAfter:Number(x.balance_after),actor:x.actor_name,createdAt:x.created_at,purchaseId:x.purchase_id})),
+    };
+  }, []);
   const load = useCallback(
     async (
       asAdmin = false,
@@ -981,6 +1010,7 @@ export default function Home() {
             !next.contactCategories.length)
         )
           next = await fetchState();
+        if (asAdmin || permissions.crates?.can_view) next = {...next,...await fetchCrates()};
         setState(next);
         if (userId)
           try {
@@ -1039,7 +1069,7 @@ export default function Home() {
         setLoading(false);
       }
     },
-    [fetchState, fetchMobileState, fetchCold],
+    [fetchState, fetchMobileState, fetchCold, fetchCrates],
   );
   const reload = useCallback(
     () =>
@@ -1159,6 +1189,8 @@ export default function Home() {
               transaction_at: new Date(String(data.dateTime)).toISOString(),
               status: "active",
               is_paid: data.isPaid !== "false",
+              returned_crates: Number(data.returnedCrates || 0),
+              crate_account_id: data.crateAccountId || null,
             },
             { onConflict: "id", ignoreDuplicates: true },
           );
@@ -1173,6 +1205,8 @@ export default function Home() {
             unit_buy_price: Number(data.buyPrice),
             transaction_at: new Date(String(data.dateTime)).toISOString(),
             is_paid: data.isPaid !== "false",
+            returned_crates: Number(data.returnedCrates || 0),
+            crate_account_id: data.crateAccountId || null,
           })
           .eq("id", data.id);
       else if (action === "togglePurchase")
@@ -1180,6 +1214,11 @@ export default function Home() {
           .from("purchases")
           .update({ status: data.status })
           .eq("id", data.id);
+      else if (action === "crateChange")
+        result = await supabase.rpc("record_crate_change", {
+          p_id:data.id, p_account:data.accountId || null, p_person:String(data.person || ""),
+          p_contact:data.contactId || null, p_quantity:Number(data.quantity || 0), p_kind:data.kind,
+        });
       else if (action === "addSale")
         result = await supabase
           .from("sales")
@@ -1570,6 +1609,7 @@ export default function Home() {
             status: "active",
             cancelledAt: null,
             isPaid: data.isPaid !== "false",
+            returnedCrates: Number(data.returnedCrates || 0), crateAccountId: String(data.crateAccountId || "") || null,
           },
           ...prev.purchases,
         ];
@@ -1585,6 +1625,7 @@ export default function Home() {
                 buyPrice: Number(data.buyPrice),
                 dateTime: iso(),
                 isPaid: data.isPaid !== "false",
+                returnedCrates: Number(data.returnedCrates || 0), crateAccountId: String(data.crateAccountId || "") || null,
               }
             : x,
         );
@@ -1729,6 +1770,25 @@ export default function Home() {
         ];
       else if (action === "deleteFavorite")
         next.favorites = prev.favorites.filter((x) => x.id !== data.id);
+      if (["addPurchase","editPurchase","togglePurchase"].includes(action)) {
+        const before=prev.purchases.find(x=>x.id===data.id);
+        const after=next.purchases.find(x=>x.id===data.id);
+        const oldQty=before?.status!=="cancelled"?before?.returnedCrates||0:0;
+        const newQty=after?.status!=="cancelled"?after?.returnedCrates||0:0;
+        const changes=new Map<string,number>();
+        if (oldQty && before?.crateAccountId) changes.set(before.crateAccountId,(changes.get(before.crateAccountId)||0)+oldQty);
+        if (newQty && after?.crateAccountId) changes.set(after.crateAccountId,(changes.get(after.crateAccountId)||0)-newQty);
+        next.crateAccounts=prev.crateAccounts.map(a=>({ ...a,balance:a.balance+(changes.get(a.id)||0) }));
+      }
+      else if (action === "crateChange") {
+        const existing = prev.crateAccounts.find(x=>x.id===data.accountId) || prev.crateAccounts.find(x=>norm(x.name)===norm(String(data.person)));
+        const quantity = Number(data.quantity || 0);
+        const delta = data.kind === "completed" ? -(existing?.balance || 0) : data.kind === "given" ? quantity : -quantity;
+        const id = existing?.id || String(data.accountId);
+        const updated = existing ? {...existing,balance:existing.balance+delta,updatedAt:new Date().toISOString()} : {id,name:String(data.person),contactId:String(data.contactId||"")||null,balance:delta,updatedAt:new Date().toISOString()};
+        next.crateAccounts = existing ? prev.crateAccounts.map(x=>x.id===existing.id?updated:x) : [updated,...prev.crateAccounts];
+        next.crateMovements = [{id:String(data.id),accountId:id,type:String(data.kind),delta,balanceAfter:updated.balance,actor:"Çevrimdışı",createdAt:new Date().toISOString(),purchaseId:null},...prev.crateMovements];
+      }
       if (session?.user.id)
         try {
           localStorage.setItem(
@@ -1784,6 +1844,24 @@ export default function Home() {
       const message = "Bu işlem için yetkiniz bulunmuyor.";
       setError(message);
       throw new Error(message);
+    }
+    if (action === "crateChange") {
+      const neededAction = data.kind === "completed" ? "can_delete" : data.kind === "returned" ? "can_update" : "can_create";
+      if (!permissionFor("crates")[neededAction]) throw new Error("Kasa işlemine yetkiniz yok.");
+      const count=Number(data.quantity);
+      if (data.kind !== "completed" && (!Number.isSafeInteger(count) || count<=0)) throw new Error("Pozitif tam kasa adedi girin.");
+    }
+    if (["addPurchase","editPurchase"].includes(action)) {
+      const count=Number(data.returnedCrates || 0);
+      if (!Number.isSafeInteger(count) || count<0) throw new Error("Getirilen kasa tam sayı olmalı.");
+      if (count && !permissionFor("crates").can_view) throw new Error("Kasa iadesi için Kasa yetkisi gerekli.");
+      if (count) {
+        const account=state.crateAccounts.find(a=>a.id===data.crateAccountId);
+        const previous=state.purchases.find(p=>p.id===data.id);
+        const available=(account?.balance||0)+(previous && previous.status!=="cancelled"&&previous.crateAccountId===account?.id?previous.returnedCrates||0:0);
+        if (!account || norm(account.name)!==norm(String(data.person))) throw new Error("Kişi için geçerli kasa hesabı seçin.");
+        if (count>available) throw new Error(`${account.name} kişisinin yalnızca ${available} açık kasası bulunuyor.`);
+      }
     }
     if (action === "addPurchase" || action === "addSale") {
       const candidate = {
@@ -2552,6 +2630,10 @@ export default function Home() {
         id: "favorites", label: "Favoriler", icon: Star,
         run: () => setView("favorites"),
       },
+      canView("crates") && {
+        id: "crates", label: "Kasa", icon: Boxes,
+        run: () => setView("crates"),
+      },
       permissionFor("expenses").can_create && {
         id: "expense", label: "Gider Gir", icon: ReceiptText,
         run: () => setDialog("expense"),
@@ -2652,6 +2734,9 @@ export default function Home() {
               purchasePermission={permissionFor("purchases")}
               compactMobile
             />
+          )}
+          {view === "crates" && canView("crates") && (
+            <CrateTracking accounts={state.crateAccounts} movements={state.crateMovements} contacts={state.contacts} permission={permissionFor("crates")} mutate={mutate} compact />
           )}
           {view === "contacts" && canView("contacts") && (
             <Contacts
@@ -3001,6 +3086,9 @@ export default function Home() {
               permission={permissionFor("cold_storage")}
               mutate={mutate}
             />
+          )}
+          {canView("crates") && view === "crates" && (
+            <CrateTracking accounts={state.crateAccounts} movements={state.crateMovements} contacts={state.contacts} permission={permissionFor("crates")} mutate={mutate} />
           )}
           {canView("reports") && view === "reports" && (
             <>
@@ -5119,6 +5207,7 @@ function QuickFavoritePurchase({
   }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const crateForm = new FormData(e.currentTarget);
     if (submitLock.current) return;
     submitLock.current = true;
     setSaving(true);
@@ -5133,6 +5222,7 @@ function QuickFavoritePurchase({
         buyPrice: price,
         dateTime: when,
         isPaid: true,
+        returnedCrates: crateForm.get("returnedCrates"), crateAccountId: crateForm.get("crateAccountId"),
       });
       if (compactMobile && userId) localStorage.setItem(mobileLastProductKey(userId, "purchase"), productId);
       setAmount("");
@@ -5210,6 +5300,7 @@ function QuickFavoritePurchase({
             required
           />
         </label>
+        <CrateReturnField accounts={state.crateAccounts} person={person} compact={compactMobile} />
         <label>
           Tarih ve saat
           <Input
@@ -7075,6 +7166,8 @@ function EntryDialog({
   const [dialogError, setDialogError] = useState(""),
     [detailUnlocking, setDetailUnlocking] = useState(false),
     [saving, setSaving] = useState(false);
+  const [editPersonChange,setEditPersonChange] = useState<{id:string;person:string}|null>(null);
+  const editPerson = editPersonChange && editPersonChange.id===selectedPurchase?.id ? editPersonChange.person : selectedPurchase?.person || "";
   const submitLock = useRef(false);
   async function submit(e: FormEvent<HTMLFormElement>, action: string) {
     e.preventDefault();
@@ -7094,6 +7187,7 @@ function EntryDialog({
       data.productId = productId;
     try {
       await mutate(action, data);
+      setEditPersonChange(null);
       if ((action === "addPurchase" || action === "addSale") && data.productId)
         localStorage.setItem(
           mobileLastProductKey(userId, action === "addPurchase" ? "purchase" : "sale"),
@@ -7177,6 +7271,7 @@ function EntryDialog({
       onOpenChange={(o) => {
         if (!o) {
           setDialogError("");
+          setEditPersonChange(null);
           close();
         }
       }}
@@ -7277,11 +7372,9 @@ function EntryDialog({
                   ))}
               </select>
             </label>
-            <Field
-              name="person"
-              label="Getiren kişinin adı"
-              defaultValue={selectedPurchase.person}
-            />
+            <label className="grid gap-2 text-sm font-bold">Getiren kişinin adı
+              <Input name="person" value={editPerson} onChange={e=>setEditPersonChange({id:selectedPurchase.id,person:e.target.value})} required />
+            </label>
             <Field
               name="plate"
               label="Araç plakası"
@@ -7299,6 +7392,7 @@ function EntryDialog({
               type="number"
               defaultValue={String(selectedPurchase.buyPrice)}
             />
+            <CrateReturnField key={selectedPurchase.id} accounts={state.crateAccounts} person={editPerson} initialAccountId={selectedPurchase.crateAccountId} initialQuantity={selectedPurchase.returnedCrates} compact={compactMobile} />
             <Field
               name="dateTime"
               label="Tarih ve saat"
@@ -7659,6 +7753,7 @@ function PurchaseEntryForm({
           required
         />
       </label>
+      <CrateReturnField accounts={state.crateAccounts} person={person} compact={compactMobile} />
       <label className="grid gap-2 text-sm font-bold">
         Tarih ve saat
         <Input

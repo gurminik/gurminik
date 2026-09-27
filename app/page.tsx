@@ -1808,7 +1808,6 @@ export default function Home() {
       addProduct: ["dashboard", "can_create"],
       archiveProduct: ["dashboard", "can_delete"],
       addPurchase: ["purchases", "can_create"],
-      crateChange: ["crates", "can_create"],
       editPurchase: ["purchases", "can_update"],
       togglePurchase: ["purchases", "can_delete"],
       addSale: ["sales", "can_create"],
@@ -1859,7 +1858,7 @@ export default function Home() {
       if (count) {
         const account=state.crateAccounts.find(a=>a.id===data.crateAccountId);
         const previous=state.purchases.find(p=>p.id===data.id);
-        const available=(account?.balance||0)+(previous?.status!=="cancelled"&&previous?.crateAccountId===account?.id?previous.returnedCrates||0:0);
+        const available=(account?.balance||0)+(previous && previous.status!=="cancelled"&&previous.crateAccountId===account?.id?previous.returnedCrates||0:0);
         if (!account || norm(account.name)!==norm(String(data.person))) throw new Error("Kişi için geçerli kasa hesabı seçin.");
         if (count>available) throw new Error(`${account.name} kişisinin yalnızca ${available} açık kasası bulunuyor.`);
       }
@@ -7168,7 +7167,7 @@ function EntryDialog({
     [detailUnlocking, setDetailUnlocking] = useState(false),
     [saving, setSaving] = useState(false);
   const [editPersonChange,setEditPersonChange] = useState<{id:string;person:string}|null>(null);
-  const editPerson = editPersonChange?.id===selectedPurchase?.id ? editPersonChange.person : selectedPurchase?.person || "";
+  const editPerson = editPersonChange && editPersonChange.id===selectedPurchase?.id ? editPersonChange.person : selectedPurchase?.person || "";
   const submitLock = useRef(false);
   async function submit(e: FormEvent<HTMLFormElement>, action: string) {
     e.preventDefault();

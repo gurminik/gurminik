@@ -47,12 +47,14 @@ export function CrateTracking({accounts,movements,contacts,permission,mutate,com
   const account=accounts.find(a=>a.id===choice);
   const contact=contacts.find(c=>`contact:${c.id}`===choice);
   const chosenName=account?.name||contact?.name||person.trim();
-  const accountId=account?.id || (contact && accounts.find(a=>a.contactId===contact.id)?.id) || null;
+  const nameMatches=!choice?accounts.filter(a=>same(a.name,person)):[];
+  const accountId=account?.id || (contact && accounts.find(a=>a.contactId===contact.id)?.id) || (nameMatches.length===1?nameMatches[0].id:null);
   function open(account?:CrateAccount) {setChoice(account?.id||"");setPerson("");setQuantity("");setMode("given");setError("");setEditing(true);}
   async function save(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if(saving)return;
     if(!chosenName || !integer(quantity) || Number(quantity)<=0) {setError("Kişi ve pozitif tam kasa adedi girin.");return;}
+    if(nameMatches.length>1) {setError("Aynı isimde birden fazla kişi var. Listeden doğru hesabı seçin.");return;}
     setSaving(true);setError("");
     try {await mutate("crateChange",{id:crypto.randomUUID(),accountId:accountId || crypto.randomUUID(),contactId:contact?.id||account?.contactId||null,person:chosenName,quantity:Number(quantity),kind:mode});setEditing(false);}
     catch(e){setError(e instanceof Error?e.message:"Kasa kaydedilemedi.");}finally{setSaving(false);}

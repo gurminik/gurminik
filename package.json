@@ -10,8 +10,9 @@
     "build": "next build",
     "start": "npx serve out",
     "lint": "eslint . --ignore-pattern out",
-    "test:features": "node scripts/verify-features.mjs && node --experimental-strip-types scripts/verify-date-fire.mjs && node --experimental-strip-types scripts/verify-backup.mjs && node scripts/verify-audit-reset.mjs && node --experimental-strip-types scripts/verify-cancellation.mjs && node scripts/verify-mobile-worker.mjs && node scripts/verify-mobile-entry.mjs && node --experimental-strip-types scripts/verify-vcard.mjs && node scripts/verify-keypad-dom.mjs",
-    "deploy": "npm run build && wrangler pages deploy out --project-name gurminik"
+    "test:features": "node scripts/verify-features.mjs && node --experimental-strip-types scripts/verify-date-fire.mjs && node --experimental-strip-types scripts/verify-backup.mjs && node scripts/verify-audit-reset.mjs && node --experimental-strip-types scripts/verify-cancellation.mjs && node scripts/verify-mobile-worker.mjs && node scripts/verify-mobile-entry.mjs && node --experimental-strip-types scripts/verify-vcard.mjs && node scripts/verify-keypad-dom.mjs && npm run test:payments",
+    "deploy": "npm run build && wrangler pages deploy out --project-name gurminik",
+    "test:payments": "node --experimental-strip-types scripts/verify-payments-db.mjs && node --experimental-strip-types scripts/verify-payments-ui.mjs && node --experimental-strip-types scripts/verify-payments-panel.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",
@@ -25,6 +26,7 @@
     "tailwind-merge": "3.6.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.9",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",

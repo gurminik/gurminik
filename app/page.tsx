@@ -74,6 +74,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
+import { Payments } from "@/components/payments";
+import { purchasePaymentValue } from "@/lib/payments";
 import {
   decodeVCardBuffer,
   formatPhone,
@@ -228,6 +230,7 @@ type InstallPromptEvent = Event & {
 type ModuleId =
   | "dashboard"
   | "purchases"
+  | "payments"
   | "sales"
   | "ranking"
   | "expenses"
@@ -395,6 +398,7 @@ const NAV = [
   ["dashboard", "Ana Sayfa", LayoutDashboard],
   ["favorites", "Favoriler", Star],
   ["purchases", "Tüm Alışlar", Boxes],
+  ["payments", "Ödemeler", WalletCards],
   ["sales", "Satışlar", ShoppingCart],
   ["ranking", "Sıralamalar", Trophy],
   ["expenses", "Giderler", ReceiptText],
@@ -409,6 +413,7 @@ const MODULE_LABELS: Record<ModuleId, string> = {
   dashboard: "Ana Sayfa",
   favorites: "Favoriler",
   purchases: "Tüm Alışlar",
+  payments: "Ödemeler",
   sales: "Satışlar",
   ranking: "Sıralamalar",
   expenses: "Giderler",
@@ -485,7 +490,7 @@ export default function Home() {
 
   const permissionFor = useCallback(
     (module: ModuleId): Permission =>
-      access.role === "admin"
+      (access.role === "admin" || access.full_access)
         ? FULL_PERMISSION
         : access.permissions[module] || {
             can_view: false,
@@ -495,6 +500,11 @@ export default function Home() {
           },
     [access],
   );
+  const [paymentTarget, setPaymentTarget] = useState<string | null>(null);
+  const clearPaymentTarget = useCallback(() => setPaymentTarget(null), []);
+  const paymentChanged = useCallback((id: string, paid: boolean) => {
+    setState((previous) => ({ ...previous, purchases: previous.purchases.map((row) => row.id === id ? { ...row, isPaid: paid } : row) }));
+  }, []);
   const canView = useCallback(
     (module: ModuleId) => access.is_active && permissionFor(module).can_view,
     [access.is_active, permissionFor],
@@ -527,7 +537,7 @@ export default function Home() {
     return epoch;
   }, []);
 
-  const fetchState = useCallback(async () => {
+  const fetchState = useCallback(async (includePurchases = true) => {
     const [
       purchasesResult,
       salesResult,
@@ -539,7 +549,7 @@ export default function Home() {
       accountPaymentsResult,
       favoritesResult,
     ] = await Promise.all([
-      fetchAllRows((from, to) =>
+      includePurchases ? fetchAllRows((from, to) =>
         supabase
           .from("purchases")
           .select(
@@ -548,7 +558,7 @@ export default function Home() {
           .order("transaction_at", { ascending: false })
           .order("id")
           .range(from, to),
-      ),
+      ) : Promise.resolve({ data: [], error: null }),
       fetchAllRows((from, to) =>
         supabase
           .from("sales")
@@ -982,9 +992,11 @@ export default function Home() {
           const claimed = await supabase.rpc("claim_gurminik_import");
           if (claimed.error) throw claimed.error;
         }
+        const includePurchases = asAdmin || permissions.purchases?.can_create ||
+          ["dashboard", "purchases", "favorites", "ranking", "reports", "backup"].some((module) => permissions[module as ModuleId]?.can_view);
         let next = mobileWorker
           ? await fetchMobileState(permissions)
-          : await fetchState();
+          : await fetchState(!!includePurchases);
         if (asAdmin && !next.products.length) {
           const inserted = await supabase
             .from("products")
@@ -1188,7 +1200,7 @@ export default function Home() {
               unit_buy_price: Number(data.buyPrice),
               transaction_at: new Date(String(data.dateTime)).toISOString(),
               status: "active",
-              is_paid: data.isPaid !== "false",
+              is_paid: purchasePaymentValue(data.isPaid),
               returned_crates: Number(data.returnedCrates || 0),
               crate_account_id: data.crateAccountId || null,
             },
@@ -1204,7 +1216,7 @@ export default function Home() {
             quantity_kg: Number(data.kg),
             unit_buy_price: Number(data.buyPrice),
             transaction_at: new Date(String(data.dateTime)).toISOString(),
-            is_paid: data.isPaid !== "false",
+            is_paid: purchasePaymentValue(data.isPaid),
             returned_crates: Number(data.returnedCrates || 0),
             crate_account_id: data.crateAccountId || null,
           })
@@ -1608,7 +1620,7 @@ export default function Home() {
             dateTime: iso(),
             status: "active",
             cancelledAt: null,
-            isPaid: data.isPaid !== "false",
+            isPaid: purchasePaymentValue(data.isPaid),
             returnedCrates: Number(data.returnedCrates || 0), crateAccountId: String(data.crateAccountId || "") || null,
           },
           ...prev.purchases,
@@ -1624,7 +1636,7 @@ export default function Home() {
                 kg: Number(data.kg),
                 buyPrice: Number(data.buyPrice),
                 dateTime: iso(),
-                isPaid: data.isPaid !== "false",
+                isPaid: purchasePaymentValue(data.isPaid),
                 returnedCrates: Number(data.returnedCrates || 0), crateAccountId: String(data.crateAccountId || "") || null,
               }
             : x,
@@ -1845,6 +1857,11 @@ export default function Home() {
       setError(message);
       throw new Error(message);
     }
+    if (action === "editPurchase") {
+      const previous = state.purchases.find((row) => row.id === data.id);
+      if (previous && purchasePaymentValue(data.isPaid) !== previous.isPaid && !permissionFor("payments").can_update)
+        throw new Error("Ödeme durumunu değiştirme yetkiniz yok.");
+    }
     if (action === "crateChange") {
       const neededAction = data.kind === "completed" ? "can_delete" : data.kind === "returned" ? "can_update" : "can_create";
       if (!permissionFor("crates")[neededAction]) throw new Error("Kasa işlemine yetkiniz yok.");
@@ -1880,7 +1897,7 @@ export default function Home() {
                 person: String(data.person),
                 plate: String(data.plate || ""),
                 buyPrice: Number(data.buyPrice),
-                isPaid: data.isPaid !== "false",
+                isPaid: purchasePaymentValue(data.isPaid),
               },
               "purchase",
             )
@@ -2511,6 +2528,10 @@ export default function Home() {
       );
       return;
     }
+    if (row.module === "payments") {
+      if (!canView("payments")) return void window.alert("Ödemeler görüntüleme yetkiniz yok.");
+      setPaymentTarget(row.entity_id || null); setView("payments"); return;
+    }
     if (row.entity_type === "purchases") {
       const record = state.purchases.find((x) => x.id === row.entity_id);
       if (!record)
@@ -2630,6 +2651,10 @@ export default function Home() {
         id: "favorites", label: "Favoriler", icon: Star,
         run: () => setView("favorites"),
       },
+      canView("payments") && {
+        id: "payments", label: "Ödemeler", icon: WalletCards,
+        run: () => setView("payments"),
+      },
       canView("crates") && {
         id: "crates", label: "Kasa", icon: Boxes,
         run: () => setView("crates"),
@@ -2725,6 +2750,10 @@ export default function Home() {
               </section>
             </>
           )}
+          {view === "payments" && canView("payments") && (
+            <Payments userId={session.user.id} canUpdate={permissionFor("payments").can_update} compact
+              onChanged={paymentChanged} openPurchaseId={paymentTarget} onOpened={clearPaymentTarget} />
+          )}
           {view === "favorites" && canView("favorites") && (
             <Favorites
               state={state}
@@ -2773,6 +2802,7 @@ export default function Home() {
         </main>
         <EntryDialog
           type={dialog}
+          canUpdatePayment={permissionFor("payments").can_update}
           close={closeMobileDialog}
           state={state}
           productId={selectedProduct}
@@ -2977,6 +3007,10 @@ export default function Home() {
               salePermission={permissionFor("sales")}
             />
           )}
+          {canView("payments") && view === "payments" && (
+            <Payments userId={session.user.id} canUpdate={permissionFor("payments").can_update}
+              onChanged={paymentChanged} openPurchaseId={paymentTarget} onOpened={clearPaymentTarget} />
+          )}
           {canView("purchases") && view === "purchases" && (
             <PurchaseList
               userId={session.user.id}
@@ -3145,6 +3179,7 @@ export default function Home() {
       </main>
       <EntryDialog
         type={dialog}
+        canUpdatePayment={permissionFor("payments").can_update}
         close={() => {
           setDialog(null);
           setSelectedPurchase(null);
@@ -3885,15 +3920,17 @@ function ProtectedStat({
   );
 }
 
-function PaymentStatusField({ defaultPaid = true }: { defaultPaid?: boolean }) {
+function PaymentStatusField({ defaultPaid = false, disabled = false }: { defaultPaid?: boolean; disabled?: boolean }) {
   return (
     <fieldset className="gurminik-payment-field">
       <legend>Ödeme Durumu</legend>
+      {disabled && <input type="hidden" name="isPaid" value={String(defaultPaid)} />}
       <div className="gurminik-payment-options">
         <label>
           <input
             type="radio"
             name="isPaid"
+            disabled={disabled}
             value="true"
             defaultChecked={defaultPaid}
           />
@@ -3903,6 +3940,7 @@ function PaymentStatusField({ defaultPaid = true }: { defaultPaid?: boolean }) {
           <input
             type="radio"
             name="isPaid"
+            disabled={disabled}
             value="false"
             defaultChecked={!defaultPaid}
           />
@@ -5221,7 +5259,7 @@ function QuickFavoritePurchase({
         kg: amount,
         buyPrice: price,
         dateTime: when,
-        isPaid: true,
+        isPaid: crateForm.get("isPaid"),
         returnedCrates: crateForm.get("returnedCrates"), crateAccountId: crateForm.get("crateAccountId"),
       });
       if (compactMobile && userId) localStorage.setItem(mobileLastProductKey(userId, "purchase"), productId);
@@ -5311,6 +5349,7 @@ function QuickFavoritePurchase({
           />
         </label>
       </div>
+      <PaymentStatusField />
       {formError && (
         <p role="alert" className="text-sm text-red-600">
           {formError}
@@ -7147,8 +7186,10 @@ function EntryDialog({
   unlockFinance,
   onSaved,
   compactMobile = false,
+  canUpdatePayment = false,
 }: {
   type: DialogType;
+  canUpdatePayment?: boolean;
   close: () => void;
   state: State;
   productId: string;
@@ -7401,6 +7442,7 @@ function EntryDialog({
             />
             <PaymentStatusField
               defaultPaid={selectedPurchase.isPaid !== false}
+              disabled={!canUpdatePayment}
             />
             <Button disabled={saving}>
               <Pencil />

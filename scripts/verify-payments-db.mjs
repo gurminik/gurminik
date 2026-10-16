@@ -76,6 +76,7 @@ try {
   await db.exec("insert into crate_accounts values ('"+id(95)+"','"+admin+"','Kasa İadeli',100); update purchases set returned_crates=10,crate_account_id='"+id(95)+"' where id='"+id(175)+"'");
   const before=(await db.query("select * from purchases order by id")).rows;
   await db.exec(readFileSync("supabase/migrations/20261013071318_supplier_payments.sql","utf8"));
+  await db.exec(readFileSync("supabase/migrations/20261016175654_fix_shared_audit_payment_fields.sql","utf8"));
   assert.deepEqual((await db.query("select * from purchases order by id")).rows,before,"migration must not mutate historical purchases");
   await db.exec(`
     create trigger sync_purchase_crates after insert or update or delete on purchases for each row execute function private.sync_purchase_crates();
